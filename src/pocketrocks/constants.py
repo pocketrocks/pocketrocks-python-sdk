@@ -1,0 +1,11 @@
+default_server_url = "ws://localhost:3000"
+connect_path = "/api/bots/connect"
+default_protocol_version = 2
+default_capacity = 1
+default_max_in_flight_decisions = 4
+default_max_queue_size = 32
+default_min_remaining_deadline_ms_to_start = 100
+default_request_timeout_slack_ms = 25
+default_reconnect = True
+default_reconnect_base_delay_seconds = 0.5
+default_reconnect_max_delay_seconds = 8.0
