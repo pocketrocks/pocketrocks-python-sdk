@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import random
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from pocketrocks.config import BotConfig
-from pocketrocks.exceptions import InvalidBotDecision, TransportClosed
+from pocketrocks.constants import fatal_connect_status_codes, reconnect_jitter_fraction
+from pocketrocks.exceptions import (
+    InvalidBotDecision,
+    TransportClosed,
+    TransportError,
+    TransportRejected,
+)
 from pocketrocks.internal.bot_wire_v2 import (
     DecisionRequest,
     Frame,
@@ -23,9 +31,18 @@ from pocketrocks.protocol import (
 from pocketrocks.transport import WebSocketTransport
 from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
 
+logger = logging.getLogger("pocketrocks.runtime")
+
 
 def now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _with_jitter(delay_seconds: float) -> float:
+    """Apply +/- ``reconnect_jitter_fraction`` jitter so bots do not reconnect
+    in lockstep. Centered on ``delay_seconds`` to preserve the average cadence."""
+    spread = delay_seconds * reconnect_jitter_fraction
+    return delay_seconds + random.uniform(-spread, spread)
 
 
 @dataclass(slots=True)
@@ -50,11 +67,21 @@ class PocketRocksRuntime:
 
     async def run(self) -> None:
         reconnect_delay_seconds = self.config.reconnect_base_delay_seconds
+        logger.info(
+            "starting bot %s; connecting to %s",
+            self.config.bot_id,
+            self.config.server_url,
+        )
         while not self.stop_requested:
             workers: list[asyncio.Task[None]] = []
             request_queue: asyncio.Queue[QueuedRequest | None] = asyncio.Queue(
                 maxsize=max(0, self.config.max_queue_size)
             )
+            connected = False
+            # Transient failures recover fast (low ceiling); a deactivated bot
+            # (403) backs off to a much higher ceiling so it barely taxes the
+            # server while waiting to be reactivated. Set per outcome below.
+            current_max_delay = self.config.reconnect_max_delay_seconds
             try:
                 await self.transport.connect(
                     build_connection_url(
@@ -63,7 +90,17 @@ class PocketRocksRuntime:
                         self.config.protocol_version,
                         self.config.capacity,
                     ),
-                    {"Authorization": f"Bearer {self.config.api_key}"},
+                    {"Authorization": f"ApiKey {self.config.api_key}"},
+                )
+                connected = True
+                # A successful connection clears any accumulated backoff so that
+                # repeated deactivate/reactivate cycles reconnect promptly.
+                reconnect_delay_seconds = self.config.reconnect_base_delay_seconds
+                logger.info(
+                    "connected to %s as bot %s (capacity %d); waiting for decision requests",
+                    self.config.server_url,
+                    self.config.bot_id,
+                    self.config.capacity,
                 )
                 await self.bot.on_connect()
                 await self.bot.on_runtime_event(RuntimeEvent(kind="connected"))
@@ -72,7 +109,50 @@ class PocketRocksRuntime:
                     for _ in range(max(1, self.config.max_in_flight_decisions))
                 ]
                 await self._read_loop(request_queue)
+            except TransportRejected as error:
+                # The server refused the handshake. 403 means the bot is
+                # deactivated (expected while toggling) — stay alive and retry.
+                # Fatal statuses (bad/expired key, invalid params) will never
+                # succeed, so stop rather than reconnect forever.
+                fatal = error.status_code in fatal_connect_status_codes
+                if not fatal:
+                    # Rejection (deactivated/rate-limited) is expected to persist,
+                    # so poll on the slow ceiling rather than the transient one.
+                    current_max_delay = self.config.rejected_reconnect_max_delay_seconds
+                if fatal:
+                    logger.error(
+                        "connection rejected (HTTP %d) — not retryable; stopping. "
+                        "Check POCKETROCKS_API_KEY and connection parameters.",
+                        error.status_code,
+                    )
+                elif error.status_code == 403:
+                    logger.warning(
+                        "connection rejected (HTTP 403) — bot is deactivated or not "
+                        "owned by this API key; will keep retrying until reactivated",
+                    )
+                else:
+                    logger.warning(
+                        "connection rejected (HTTP %d); will retry",
+                        error.status_code,
+                    )
+                await self.bot.on_runtime_event(
+                    RuntimeEvent(
+                        kind="connectionRejected",
+                        details={"status_code": error.status_code},
+                    )
+                )
+                await self.bot.on_error(error)
+                if fatal:
+                    return
+            except TransportError as error:
+                # Network failure / server unavailable — retryable.
+                logger.warning("connection error: %s; will retry", error)
+                await self.bot.on_runtime_event(
+                    RuntimeEvent(kind="connectionError", details={"error": str(error)})
+                )
+                await self.bot.on_error(error)
             except TransportClosed as error:
+                logger.info("connection closed by server: %s", error)
                 await self.bot.on_error(error)
             finally:
                 for _ in workers:
@@ -80,17 +160,19 @@ class PocketRocksRuntime:
                 if workers:
                     await asyncio.gather(*workers, return_exceptions=True)
                 await self.transport.disconnect()
-                await self.bot.on_disconnect()
-                await self.bot.on_runtime_event(RuntimeEvent(kind="disconnected"))
+                if connected:
+                    logger.info("disconnected from %s", self.config.server_url)
+                    await self.bot.on_disconnect()
+                    await self.bot.on_runtime_event(RuntimeEvent(kind="disconnected"))
 
             if not self.config.reconnect or self.stop_requested:
+                logger.info("reconnect disabled; bot runtime stopped")
                 return
 
-            await asyncio.sleep(reconnect_delay_seconds)
-            reconnect_delay_seconds = min(
-                reconnect_delay_seconds * 2,
-                self.config.reconnect_max_delay_seconds,
-            )
+            sleep_seconds = _with_jitter(reconnect_delay_seconds)
+            logger.info("reconnecting in %.1fs", sleep_seconds)
+            await asyncio.sleep(sleep_seconds)
+            reconnect_delay_seconds = min(reconnect_delay_seconds * 2, current_max_delay)
 
     async def stop(self) -> None:
         self.stop_requested = True
@@ -106,6 +188,7 @@ class PocketRocksRuntime:
             try:
                 frame = decode_frame(payload)
             except Exception as error:
+                logger.warning("dropping malformed frame: %s", error)
                 await self.bot.on_runtime_event(
                     RuntimeEvent(kind="malformedFrame", details={"error": str(error)})
                 )
@@ -113,6 +196,7 @@ class PocketRocksRuntime:
                 continue
 
             if isinstance(frame, HeartbeatRequest):
+                logger.debug("heartbeat %s", frame.request_id)
                 await self.bot.on_runtime_event(
                     RuntimeEvent(kind="heartbeatReceived", details={"request_id": frame.request_id})
                 )
@@ -166,12 +250,23 @@ class PocketRocksRuntime:
                 decision = await self._resolve_decision(frame, context, remaining_ms)
                 self._validate_decision(context, decision)
                 await self._send_frame(decision_to_protocol_response(frame.request_id, decision))
+                logger.debug(
+                    "request %s (%s) -> %s %s",
+                    frame.request_id,
+                    frame.decision_kind,
+                    decision.action_kind,
+                    decision.value if decision.value is not None else "",
+                )
                 await self.bot.on_runtime_event(
                     RuntimeEvent(kind="requestCompleted", details={"request_id": frame.request_id})
                 )
             except asyncio.TimeoutError:
+                logger.warning(
+                    "request %s timed out before the bot returned a decision", frame.request_id
+                )
                 await self._emit_drop_event(frame, "deadline_expired", frame.deadline_at - now_ms())
             except Exception as error:
+                logger.warning("request %s failed: %s", frame.request_id, error)
                 await self.bot.on_runtime_event(
                     RuntimeEvent(
                         kind="requestFailed",
@@ -229,6 +324,12 @@ class PocketRocksRuntime:
         reason: str,
         remaining_ms: int,
     ) -> None:
+        logger.warning(
+            "dropped request %s (%s); remaining deadline %dms",
+            frame.request_id,
+            reason,
+            remaining_ms,
+        )
         await self.bot.on_runtime_event(
             RuntimeEvent(
                 kind="requestDropped",

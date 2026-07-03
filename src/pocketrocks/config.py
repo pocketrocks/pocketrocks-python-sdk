@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from dotenv import find_dotenv, load_dotenv
+
 from pocketrocks.constants import (
     default_capacity,
     default_max_in_flight_decisions,
@@ -12,6 +14,7 @@ from pocketrocks.constants import (
     default_reconnect,
     default_reconnect_base_delay_seconds,
     default_reconnect_max_delay_seconds,
+    default_rejected_reconnect_max_delay_seconds,
     default_request_timeout_slack_ms,
     default_server_url,
 )
@@ -48,9 +51,13 @@ class BotConfig:
     reconnect: bool
     reconnect_base_delay_seconds: float
     reconnect_max_delay_seconds: float
+    rejected_reconnect_max_delay_seconds: float
 
     @classmethod
     def from_env(cls) -> BotConfig:
+        # Load a .env file from the current working directory (or any parent),
+        # without overriding variables already set in the real environment.
+        load_dotenv(find_dotenv(usecwd=True), override=False)
         return cls(
             api_key=os.getenv("POCKETROCKS_API_KEY") or None,
             bot_id=os.getenv("POCKETROCKS_BOT_ID") or None,
@@ -81,5 +88,9 @@ class BotConfig:
             reconnect_max_delay_seconds=_float_from_env(
                 "POCKETROCKS_RECONNECT_MAX_DELAY_SECONDS",
                 default_reconnect_max_delay_seconds,
+            ),
+            rejected_reconnect_max_delay_seconds=_float_from_env(
+                "POCKETROCKS_REJECTED_RECONNECT_MAX_DELAY_SECONDS",
+                default_rejected_reconnect_max_delay_seconds,
             ),
         )

@@ -1,8 +1,29 @@
+# Python bytecode / caches
 __pycache__/
+*.py[cod]
+
+# Tooling caches
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Build artifacts / packaging
 *.egg-info/
 dist/
 build/
 
+# Virtual environments
+.venv/
+venv/
+
+# Local secrets (never commit real credentials)
+.env
+
+# uv lockfile. This project is a *library*, not an application: downstream
+# consumers resolve their own dependency versions, so we intentionally do not
+# pin a lockfile. Remove this line if you decide to commit a reproducible
+# dev environment instead.
+uv.lock
+
+# OS cruft
+.DS_Store

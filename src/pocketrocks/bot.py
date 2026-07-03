@@ -4,6 +4,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Any
 
+from pocketrocks._logging import install_default_logging
 from pocketrocks.config import BotConfig
 from pocketrocks.runtime import PocketRocksRuntime
 from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
@@ -24,6 +25,7 @@ class PocketRocksBot(ABC):
         reconnect: bool | None = None,
         reconnect_base_delay_seconds: float | None = None,
         reconnect_max_delay_seconds: float | None = None,
+        rejected_reconnect_max_delay_seconds: float | None = None,
         transport: Any | None = None,
     ) -> None:
         env_config = BotConfig.from_env()
@@ -58,6 +60,11 @@ class PocketRocksBot(ABC):
                 if reconnect_max_delay_seconds is not None
                 else env_config.reconnect_max_delay_seconds
             ),
+            rejected_reconnect_max_delay_seconds=(
+                rejected_reconnect_max_delay_seconds
+                if rejected_reconnect_max_delay_seconds is not None
+                else env_config.rejected_reconnect_max_delay_seconds
+            ),
         )
         if self.config.api_key is None:
             raise ValueError("api_key is required")
@@ -66,6 +73,7 @@ class PocketRocksBot(ABC):
         self.transport = transport
 
     def run(self) -> None:
+        install_default_logging()
         asyncio.run(self.run_async())
 
     async def run_async(self) -> None:

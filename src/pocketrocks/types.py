@@ -8,6 +8,8 @@ decisionActionKind = Literal["pass", "submitBid", "selectInfoToReveal"]
 runtimeEventKind = Literal[
     "connected",
     "disconnected",
+    "connectionRejected",
+    "connectionError",
     "heartbeatReceived",
     "heartbeatSent",
     "requestQueued",
@@ -16,6 +18,13 @@ runtimeEventKind = Literal[
     "requestFailed",
     "malformedFrame",
 ]
+
+
+def _sum_columns(matrix: tuple[tuple[int, ...], ...]) -> tuple[int, ...]:
+    """Sum a per-seat matrix down to per-suit totals (one entry per column)."""
+    if not matrix:
+        return ()
+    return tuple(sum(column) for column in zip(*matrix, strict=False))
 
 
 @dataclass(slots=True, frozen=True)
@@ -62,6 +71,24 @@ class DecisionContext:
     @property
     def remaining_deadline_ms(self) -> int:
         return max(0, self.deadline_at - self.received_at)
+
+    @property
+    def revealed_info_counts_by_suit(self) -> tuple[int, ...]:
+        """Total revealed info per suit across all seats.
+
+        Column sums of :attr:`revealed_info_counts_by_seat`; index ``i`` is the
+        count for ``pocketrocks.reference.Suit(i + 1)``.
+        """
+        return _sum_columns(self.revealed_info_counts_by_seat)
+
+    @property
+    def won_resource_counts_by_suit(self) -> tuple[int, ...]:
+        """Total resources won per suit across all seats.
+
+        Column sums of :attr:`won_resource_counts_by_seat`; index ``i`` is the
+        count for ``pocketrocks.reference.Suit(i + 1)``.
+        """
+        return _sum_columns(self.won_resource_counts_by_seat)
 
 
 @dataclass(slots=True, frozen=True)

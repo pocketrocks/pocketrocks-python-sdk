@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 import websockets
+from websockets.exceptions import InvalidStatus
 
-from pocketrocks.exceptions import TransportClosed, TransportError
+from pocketrocks.exceptions import TransportClosed, TransportError, TransportRejected
 
 
 class WebSocketTransport:
@@ -17,6 +18,8 @@ class WebSocketTransport:
                 url,
                 additional_headers=headers,
             )
+        except InvalidStatus as error:
+            raise TransportRejected(error.response.status_code, str(error)) from error
         except Exception as error:  # pragma: no cover - exercised via integration
             raise TransportError(str(error)) from error
 
