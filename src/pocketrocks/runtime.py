@@ -169,6 +169,11 @@ class PocketRocksRuntime:
                 logger.info("reconnect disabled; bot runtime stopped")
                 return
 
+            # Clamp to the ceiling for *this* failure type before sleeping. The
+            # accumulated backoff can carry over a higher ceiling (e.g. 60s from
+            # prior rejections); a transient blip should not inherit it and leave
+            # the bot offline for the slow interval.
+            reconnect_delay_seconds = min(reconnect_delay_seconds, current_max_delay)
             sleep_seconds = _with_jitter(reconnect_delay_seconds)
             logger.info("reconnecting in %.1fs", sleep_seconds)
             await asyncio.sleep(sleep_seconds)

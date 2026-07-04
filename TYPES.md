@@ -135,7 +135,7 @@ For how long you have left, use the derived `remaining_deadline_ms` property
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `bot_seat` | `int` | Your seat index (`0`-based). |
-| `tiebreak_seat` | `int` | Seat that currently holds the tiebreak (wins ties, and is the one revealing info). |
+| `tiebreak_seat` | `int` | Seat that currently holds the tiebreak marker (and is the one revealing info). Ties are **not** won by this seat directly: resolution starts at the seat immediately after it in seat order and wraps around, so the holder only wins a tie if no later seat also tied. |
 | `current_hand_suit_ids` | `tuple[int, ...]` | The suit IDs in your hand. |
 
 ### The table
