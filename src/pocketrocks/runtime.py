@@ -74,8 +74,11 @@ class PocketRocksRuntime:
         )
         while not self.stop_requested:
             workers: list[asyncio.Task[None]] = []
+            # Floor at 1: asyncio.Queue(maxsize=0) is *unbounded*, so a
+            # configured 0/negative would silently disable the overload drop
+            # path below. Clamp to the smallest bounded capacity instead.
             request_queue: asyncio.Queue[QueuedRequest | None] = asyncio.Queue(
-                maxsize=max(0, self.config.max_queue_size)
+                maxsize=max(1, self.config.max_queue_size)
             )
             connected = False
             # Transient failures recover fast (low ceiling); a deactivated bot
