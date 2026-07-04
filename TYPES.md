@@ -161,7 +161,7 @@ the wire:
 
 | Property | Type | Meaning |
 | --- | --- | --- |
-| `remaining_deadline_ms` | `int` | `deadline_at - received_at`, clamped at `0`. |
+| `remaining_deadline_ms` | `int` | Milliseconds left until `deadline_at`, measured from the current time (not `received_at`), clamped at `0`. Reflects the real budget after any time the request spent queued. |
 | `won_resource_counts_by_suit` | `tuple[int, ...]` | Per-suit totals across all seats (column sums of `won_resource_counts_by_seat`). Index `i` is `Suit(i + 1)`. |
 | `revealed_info_counts_by_suit` | `tuple[int, ...]` | Per-suit totals across all seats (column sums of `revealed_info_counts_by_seat`). Index `i` is `Suit(i + 1)`. |
 

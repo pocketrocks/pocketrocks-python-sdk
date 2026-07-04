@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -70,7 +71,14 @@ class DecisionContext:
 
     @property
     def remaining_deadline_ms(self) -> int:
-        return max(0, self.deadline_at - self.received_at)
+        """Milliseconds left until the server deadline, measured from *now*.
+
+        Uses the current time rather than ``received_at`` so it reflects the
+        real remaining budget: a request may sit in the queue before a worker
+        starts it, and the runtime enforces its timeout from that later start
+        time. Measuring from ``received_at`` would overstate the budget by the
+        full queue delay. Clamped at ``0``."""
+        return max(0, self.deadline_at - int(time.time() * 1000))
 
     @property
     def revealed_info_counts_by_suit(self) -> tuple[int, ...]:
