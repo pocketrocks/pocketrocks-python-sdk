@@ -1,0 +1,5 @@
+# The PocketRocks SDK — this is the connector library your bot runs on.
+# Installing this pulls in everything the bot needs (websockets, dotenv, ...).
+#
+# Install with:  pip install -r requirements.txt
+pocketrocks-python-sdk @ git+https://github.com/jaiparera/pocketrocks-python-sdk.git

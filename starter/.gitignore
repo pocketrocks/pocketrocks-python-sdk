@@ -1,0 +1,4 @@
+# Never commit your real secrets or your virtual environment.
+.env
+.venv/
+__pycache__/
