@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from pocketrocks.config import BotConfig
-from pocketrocks.constants import fatal_connect_status_codes, reconnect_jitter_fraction
+from pocketrocks.constants import fatal_connect_status_codes
 from pocketrocks.exceptions import (
     InvalidBotDecision,
     TransportClosed,
@@ -28,6 +27,7 @@ from pocketrocks.protocol import (
     build_decision_context,
     decision_to_protocol_response,
 )
+from pocketrocks.reconnect import ReconnectOutcome, ReconnectPolicy
 from pocketrocks.transport import WebSocketTransport
 from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
 
@@ -36,13 +36,6 @@ logger = logging.getLogger("pocketrocks.runtime")
 
 def now_ms() -> int:
     return int(time.time() * 1000)
-
-
-def _with_jitter(delay_seconds: float) -> float:
-    """Apply +/- ``reconnect_jitter_fraction`` jitter so bots do not reconnect
-    in lockstep. Centered on ``delay_seconds`` to preserve the average cadence."""
-    spread = delay_seconds * reconnect_jitter_fraction
-    return delay_seconds + random.uniform(-spread, spread)
 
 
 @dataclass(slots=True)
@@ -58,15 +51,16 @@ class PocketRocksRuntime:
         bot: Any,
         config: BotConfig,
         transport: Any | None = None,
+        policy: ReconnectPolicy | None = None,
     ) -> None:
         self.bot = bot
         self.config = config
         self.transport = transport or WebSocketTransport()
+        self.policy = policy or ReconnectPolicy(config)
         self.write_lock = asyncio.Lock()
         self.stop_requested = False
 
     async def run(self) -> None:
-        reconnect_delay_seconds = self.config.reconnect_base_delay_seconds
         logger.info(
             "starting bot %s; connecting to %s",
             self.config.bot_id,
@@ -81,10 +75,9 @@ class PocketRocksRuntime:
                 maxsize=max(1, self.config.max_queue_size)
             )
             connected = False
-            # Transient failures recover fast (low ceiling); a deactivated bot
-            # (403) backs off to a much higher ceiling so it barely taxes the
-            # server while waiting to be reactivated. Set per outcome below.
-            current_max_delay = self.config.reconnect_max_delay_seconds
+            # Which backoff schedule this attempt's failure warrants. Transient by
+            # default; a retryable handshake rejection (403) escalates it below.
+            outcome: ReconnectOutcome = "transient"
             try:
                 await self.transport.connect(
                     build_connection_url(
@@ -98,7 +91,7 @@ class PocketRocksRuntime:
                 connected = True
                 # A successful connection clears any accumulated backoff so that
                 # repeated deactivate/reactivate cycles reconnect promptly.
-                reconnect_delay_seconds = self.config.reconnect_base_delay_seconds
+                self.policy.reset()
                 logger.info(
                     "connected to %s as bot %s (capacity %d); waiting for decision requests",
                     self.config.server_url,
@@ -121,7 +114,7 @@ class PocketRocksRuntime:
                 if not fatal:
                     # Rejection (deactivated/rate-limited) is expected to persist,
                     # so poll on the slow ceiling rather than the transient one.
-                    current_max_delay = self.config.rejected_reconnect_max_delay_seconds
+                    outcome = "rejected"
                 if fatal:
                     logger.error(
                         "connection rejected (HTTP %d) — not retryable; stopping. "
@@ -172,15 +165,9 @@ class PocketRocksRuntime:
                 logger.info("reconnect disabled; bot runtime stopped")
                 return
 
-            # Clamp to the ceiling for *this* failure type before sleeping. The
-            # accumulated backoff can carry over a higher ceiling (e.g. 60s from
-            # prior rejections); a transient blip should not inherit it and leave
-            # the bot offline for the slow interval.
-            reconnect_delay_seconds = min(reconnect_delay_seconds, current_max_delay)
-            sleep_seconds = _with_jitter(reconnect_delay_seconds)
+            sleep_seconds = self.policy.next_delay(outcome)
             logger.info("reconnecting in %.1fs", sleep_seconds)
             await asyncio.sleep(sleep_seconds)
-            reconnect_delay_seconds = min(reconnect_delay_seconds * 2, current_max_delay)
 
     async def stop(self) -> None:
         self.stop_requested = True
