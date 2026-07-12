@@ -9,7 +9,6 @@ from typing import Any
 from pocketrocks.config import BotConfig
 from pocketrocks.constants import fatal_connect_status_codes
 from pocketrocks.exceptions import (
-    InvalidBotDecision,
     TransportClosed,
     TransportError,
     TransportRejected,
@@ -243,7 +242,7 @@ class PocketRocksRuntime:
             try:
                 context = build_decision_context(frame, received_at=queued_request.received_at)
                 decision = await self._resolve_decision(frame, context, remaining_ms)
-                self._validate_decision(context, decision)
+                context.validate(decision)
                 await self._send_frame(decision_to_protocol_response(frame.request_id, decision))
                 logger.debug(
                     "request %s (%s) -> %s %s",
@@ -285,29 +284,6 @@ class PocketRocksRuntime:
 
     def _uses_raw_callback(self) -> bool:
         return bool(self.bot.uses_raw_decision())
-
-    def _validate_decision(self, context: DecisionContext, decision: BotDecision) -> None:
-        if context.decision_kind == "submitBid":
-            if decision.action_kind == "selectInfoToReveal":
-                raise InvalidBotDecision("submitBid requests cannot receive reveal responses")
-            if decision.action_kind == "submitBid":
-                if decision.value is None:
-                    raise InvalidBotDecision("submitBid responses require a value")
-                if (
-                    context.legal_max_amount is not None
-                    and decision.value > context.legal_max_amount
-                ):
-                    raise InvalidBotDecision("bid exceeds legal maximum")
-                if decision.value < 0:
-                    raise InvalidBotDecision("bid must be non-negative")
-            return
-        if decision.action_kind == "submitBid":
-            raise InvalidBotDecision("selectInfoToReveal requests cannot receive bid responses")
-        if decision.action_kind == "selectInfoToReveal":
-            if decision.value is None:
-                raise InvalidBotDecision("selectInfoToReveal responses require a card index")
-            if decision.value < 0 or decision.value >= context.revealable_count:
-                raise InvalidBotDecision("card index is out of range")
 
     async def _send_frame(self, frame: Frame) -> None:
         async with self.write_lock:
