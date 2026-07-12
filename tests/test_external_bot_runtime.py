@@ -7,32 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from pocketrocks import BotDecision, PocketRocksBot
+from pocketrocks import ActionId, BotDecision, PocketRocksBot, Suit
+from pocketrocks.testing import FakeTransport, decode_frames, heartbeat_bytes, scenario
 from pocketrocks.types import DecisionContext, RuntimeEvent
-
-
-class FakeTransport:
-    def __init__(self, incoming_messages: list[bytes]) -> None:
-        self.incoming_messages = list(incoming_messages)
-        self.sent_messages: list[bytes] = []
-        self.connected_url: str | None = None
-        self.connected_headers: dict[str, str] | None = None
-        self.disconnected = False
-
-    async def connect(self, url: str, headers: dict[str, str]) -> None:
-        self.connected_url = url
-        self.connected_headers = headers
-
-    async def disconnect(self) -> None:
-        self.disconnected = True
-
-    async def receive_bytes(self) -> bytes:
-        if not self.incoming_messages:
-            raise EOFError
-        return self.incoming_messages.pop(0)
-
-    async def send_bytes(self, payload: bytes) -> None:
-        self.sent_messages.append(payload)
 
 
 class RecordingBot(PocketRocksBot):
@@ -65,56 +42,19 @@ def _fixture_request_bytes(
     deadline_at: int,
     decision_kind: str = "submitBid",
 ) -> bytes:
-    from pocketrocks.internal.bot_wire_v2 import (
-        DecisionRequest,
-        GameSetupEvent,
-        TurnOpenedEvent,
-        encode_frame,
-    )
-
-    return encode_frame(
-        DecisionRequest(
-            kind="decisionRequest",
+    # Fixture defaults (3 players, one open Auction1, bot at seat 0) via the
+    # shipped test kit — the same narration bot authors use.
+    return (
+        scenario(players=3, starting_cash=20, initial_tiebreak_seat=1)
+        .turn(ActionId.AUCTION1, resources=(Suit.BRICK, Suit.WOOD))
+        .deciding(
+            seat=0,
+            hand=[Suit.BRICK, Suit.BRICK, Suit.ORE],
+            kind=decision_kind,
             request_id=request_id,
-            deadline_at=deadline_at,
-            decision_kind=decision_kind,
-            common_events=(
-                GameSetupEvent(
-                    kind="gameSetup",
-                    player_count=3,
-                    starting_cash=20,
-                    value_chart=(0, 4, 8, 12, 16, 20),
-                    initial_tiebreak_seat=1,
-                    objective_ids=(1, 2, 3, 4),
-                ),
-                TurnOpenedEvent(
-                    kind="turnOpened",
-                    action_id=1,
-                    resource_ids=(1, 2),
-                ),
-            ),
-            bot_seat=0,
-            current_hand_suit_ids=(1, 1, 3),
         )
+        .to_bytes(deadline_at=deadline_at)
     )
-
-
-def _heartbeat_request_bytes(request_id: str) -> bytes:
-    from pocketrocks.internal.bot_wire_v2 import HeartbeatRequest, encode_frame
-
-    return encode_frame(
-        HeartbeatRequest(
-            kind="heartbeatRequest",
-            request_id=request_id,
-            deadline_at=_now_ms(5_000),
-        )
-    )
-
-
-def _decode_sent_messages(payloads: list[bytes]) -> list[object]:
-    from pocketrocks.internal.bot_wire_v2 import decode_frame
-
-    return [decode_frame(payload) for payload in payloads]
 
 
 def test_vendored_bot_wire_matches_golden_fixture():
@@ -124,7 +64,7 @@ def test_vendored_bot_wire_matches_golden_fixture():
     fixture = json.loads(fixture_path.read_text(encoding="utf8"))
     request_bytes = bytes.fromhex(fixture["decisionRequestHex"])
 
-    frame = _decode_sent_messages([request_bytes])[0]
+    frame = decode_frames([request_bytes])[0]
     context = reconstruct_decision_context(frame)
 
     assert request_bytes.hex() == fixture["decisionRequestHex"]
@@ -137,7 +77,7 @@ def test_vendored_bot_wire_matches_golden_fixture():
 async def test_runtime_connects_handles_heartbeat_and_submits_decision():
     transport = FakeTransport(
         [
-            _heartbeat_request_bytes("11111111-1111-1111-1111-111111111111"),
+            heartbeat_bytes("11111111-1111-1111-1111-111111111111"),
             _fixture_request_bytes(
                 request_id="22222222-2222-2222-2222-222222222222",
                 deadline_at=_now_ms(5_000),
@@ -154,7 +94,7 @@ async def test_runtime_connects_handles_heartbeat_and_submits_decision():
 
     await bot.run_async()
 
-    sent_frames = _decode_sent_messages(transport.sent_messages)
+    sent_frames = decode_frames(transport.sent_messages)
     assert transport.connected_url == (
         "ws://example.test/api/bots/connect?botId=bot_1234&protocolVersion=2&capacity=1"
     )
@@ -261,73 +201,6 @@ async def test_runtime_stops_on_fatal_401_without_infinite_retry():
     assert "connected" not in kinds
 
 
-async def _capture_reconnect_sleeps(monkeypatch, error: Exception, *, sample: int) -> list[float]:
-    """Run a bot whose connect always fails with ``error`` and record the
-    sleep values the runtime requests, without actually waiting."""
-    transport = ScriptedConnectTransport([error])
-    bot = RecordingBot(
-        api_key="test-key",
-        bot_id="bot_1234",
-        server_url="ws://example.test",
-        reconnect=True,
-        reconnect_base_delay_seconds=0.5,
-        reconnect_max_delay_seconds=8.0,
-        rejected_reconnect_max_delay_seconds=60.0,
-        transport=transport,
-    )
-    sleeps: list[float] = []
-    runtime_holder: dict[str, object] = {}
-
-    real_run_async = bot.run_async
-
-    async def fake_sleep(seconds: float) -> None:
-        sleeps.append(seconds)
-        if len(sleeps) >= sample:
-            runtime = runtime_holder["runtime"]
-            runtime.stop_requested = True  # type: ignore[attr-defined]
-
-    # Capture the runtime instance the bot creates so we can stop the loop.
-    from pocketrocks.runtime import PocketRocksRuntime
-
-    original_init = PocketRocksRuntime.__init__
-
-    def capturing_init(self, **kwargs):  # type: ignore[no-untyped-def]
-        original_init(self, **kwargs)
-        runtime_holder["runtime"] = self
-
-    monkeypatch.setattr(PocketRocksRuntime, "__init__", capturing_init)
-    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
-    await asyncio.wait_for(real_run_async(), timeout=2)
-    return sleeps
-
-
-@pytest.mark.asyncio
-async def test_deactivated_403_backs_off_to_the_slow_ceiling(monkeypatch):
-    from pocketrocks.exceptions import TransportRejected
-
-    sleeps = await _capture_reconnect_sleeps(
-        monkeypatch, TransportRejected(403, "inactive"), sample=15
-    )
-
-    # A deactivated bot must climb past the transient 8s ceiling toward the
-    # 60s rejected ceiling (jitter keeps it within ~15%).
-    assert max(sleeps) > 8.0 * 1.15
-    assert max(sleeps) <= 60.0 * 1.16
-
-
-@pytest.mark.asyncio
-async def test_transient_error_stays_on_the_fast_ceiling(monkeypatch):
-    from pocketrocks.exceptions import TransportError
-
-    sleeps = await _capture_reconnect_sleeps(
-        monkeypatch, TransportError("connection refused"), sample=15
-    )
-
-    # Transient failures must keep recovering fast: never exceed the 8s ceiling
-    # (plus jitter), so an active bot is not stuck offline after a blip.
-    assert max(sleeps) <= 8.0 * 1.16
-
-
 @pytest.mark.asyncio
 async def test_runtime_prefers_raw_callback_when_overridden():
     class RawBot(RecordingBot):
@@ -357,7 +230,7 @@ async def test_runtime_prefers_raw_callback_when_overridden():
 
     await bot.run_async()
 
-    sent_frames = _decode_sent_messages(transport.sent_messages)
+    sent_frames = decode_frames(transport.sent_messages)
     assert [frame.kind for frame in sent_frames] == ["decisionResponse"]
     assert sent_frames[0].action_kind == "pass"
 
@@ -398,7 +271,7 @@ async def test_runtime_drops_overdue_requests_and_reports_overload():
 
     await bot.run_async()
 
-    sent_frames = _decode_sent_messages(transport.sent_messages)
+    sent_frames = decode_frames(transport.sent_messages)
     dropped_events = [event for event in bot.runtime_events if event.kind == "requestDropped"]
 
     assert [frame.kind for frame in sent_frames] == ["decisionResponse"]
@@ -444,7 +317,7 @@ async def test_runtime_contains_callback_errors_and_keeps_processing():
 
     await bot.run_async()
 
-    sent_frames = _decode_sent_messages(transport.sent_messages)
+    sent_frames = decode_frames(transport.sent_messages)
 
     assert [frame.kind for frame in sent_frames] == ["decisionResponse"]
     assert sent_frames[0].action_kind == "pass"

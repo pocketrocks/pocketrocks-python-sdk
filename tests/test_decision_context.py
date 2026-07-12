@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import time
 
-from pocketrocks import DecisionContext
+from pocketrocks import DecisionContext, Suit
+from pocketrocks.testing import scenario
 
 
 def _context(
@@ -12,26 +13,20 @@ def _context(
     deadline_at: int = 100,
     received_at: int = 10,
 ) -> DecisionContext:
-    return DecisionContext(
-        request_id="r",
-        deadline_at=deadline_at,
-        received_at=received_at,
-        decision_kind="submitBid",
-        player_count=len(won),
-        starting_cash=0,
-        value_chart=(0, 4, 8, 12, 16, 20),
-        objective_ids=(),
-        current_action_id=None,
-        current_resource_ids=(0, 0),
-        cash_by_seat=tuple(0 for _ in won),
-        tiebreak_seat=0,
-        won_resource_counts_by_seat=won,
-        revealed_info_counts_by_seat=revealed,
-        owned_objective_ids_by_seat=tuple(() for _ in won),
-        bot_seat=0,
-        current_hand_suit_ids=(),
-        legal_max_amount=0,
-        revealable_count=0,
+    # These tests assert the dataclass's own derived-property math on arbitrary
+    # per-seat matrices, which no realistic history would produce — the override
+    # hatch is exactly for that. deadline_at/received_at are pinned too so the
+    # remaining-budget assertions are deterministic.
+    return (
+        scenario(players=len(won), starting_cash=0)
+        .deciding(seat=0, hand=[Suit.BRICK], kind="submitBid")
+        .override(
+            deadline_at=deadline_at,
+            received_at=received_at,
+            won_resource_counts_by_seat=won,
+            revealed_info_counts_by_seat=revealed,
+        )
+        .to_context()
     )
 
 

@@ -89,6 +89,47 @@ and a protocol-aware [`raw_frame_bot`](examples/raw_frame_bot.py).
 
 ---
 
+## Testing your bot
+
+The SDK ships a test kit at `pocketrocks.testing` so you can exercise your
+`choose_decision` without a live server. Narrate a game situation and derive the
+exact `DecisionContext` your bot would see — it runs through the same
+reconstruction the real wire uses, so the context is one a real game could reach:
+
+```python
+from pocketrocks import ActionId, Suit
+from pocketrocks.testing import scenario
+
+
+async def test_my_bot_bids_the_max():   # choose_decision is a coroutine
+    ctx = (
+        scenario(players=3, starting_cash=20)
+        .turn(ActionId.AUCTION1, resources=(Suit.BRICK, Suit.WOOD))
+        .auction(bids={0: 4, 1: 0, 2: 0})   # seat 0 wins for $4
+        .deciding(seat=1, hand=[Suit.BRICK, Suit.ORE], kind="submitBid")
+        .to_context()
+    )
+    assert await MyBot(api_key="x", bot_id="y").choose_decision(ctx) == ...
+```
+
+Need a value the narration can't reach (say `legal_max_amount == 0`)? Add
+`.override(legal_max_amount=0)` before `.to_context()`.
+
+To drive the whole runtime end-to-end, feed `.to_bytes()` through the shipped
+`FakeTransport`:
+
+```python
+from pocketrocks.testing import FakeTransport, decode_frames, scenario
+
+transport = FakeTransport([scenario(players=3, starting_cash=20)
+                           .deciding(seat=0, hand=[Suit.BRICK], kind="submitBid")
+                           .to_bytes()])
+await MyBot(api_key="x", bot_id="y", reconnect=False, transport=transport).run_async()
+sent = decode_frames(transport.sent_messages)   # inspect what your bot replied
+```
+
+---
+
 ## Bot API reference
 
 > **Full type reference:** [`TYPES.md`](TYPES.md) documents every public type

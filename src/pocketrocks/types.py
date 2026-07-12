@@ -4,6 +4,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from pocketrocks.exceptions import InvalidBotDecision
+
 decisionKind = Literal["submitBid", "selectInfoToReveal"]
 decisionActionKind = Literal["pass", "submitBid", "selectInfoToReveal"]
 runtimeEventKind = Literal[
@@ -79,6 +81,45 @@ class DecisionContext:
         time. Measuring from ``received_at`` would overstate the budget by the
         full queue delay. Clamped at ``0``."""
         return max(0, self.deadline_at - int(time.time() * 1000))
+
+    def validate(self, decision: BotDecision) -> None:
+        """Raise :class:`~pocketrocks.exceptions.InvalidBotDecision` if ``decision``
+        is not a legal response to this context.
+
+        Legality is a pure function of the context and the decision: the response
+        kind must match the request kind, a bid must be non-negative and within
+        ``legal_max_amount``, and a reveal index must be within
+        ``revealable_count``. ``pass`` is always legal. The runtime calls this on
+        every returned decision; a bot can call it (or :meth:`is_legal`) itself to
+        self-check before returning.
+        """
+        if self.decision_kind == "submitBid":
+            if decision.action_kind == "selectInfoToReveal":
+                raise InvalidBotDecision("submitBid requests cannot receive reveal responses")
+            if decision.action_kind == "submitBid":
+                if decision.value is None:
+                    raise InvalidBotDecision("submitBid responses require a value")
+                if self.legal_max_amount is not None and decision.value > self.legal_max_amount:
+                    raise InvalidBotDecision("bid exceeds legal maximum")
+                if decision.value < 0:
+                    raise InvalidBotDecision("bid must be non-negative")
+            return
+        if decision.action_kind == "submitBid":
+            raise InvalidBotDecision("selectInfoToReveal requests cannot receive bid responses")
+        if decision.action_kind == "selectInfoToReveal":
+            if decision.value is None:
+                raise InvalidBotDecision("selectInfoToReveal responses require a card index")
+            if decision.value < 0 or decision.value >= self.revealable_count:
+                raise InvalidBotDecision("card index is out of range")
+
+    def is_legal(self, decision: BotDecision) -> bool:
+        """Whether ``decision`` is a legal response to this context. A boolean
+        wrapper over :meth:`validate` for bots weighing options without try/except."""
+        try:
+            self.validate(decision)
+        except InvalidBotDecision:
+            return False
+        return True
 
     @property
     def revealed_info_counts_by_suit(self) -> tuple[int, ...]:
