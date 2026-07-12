@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from urllib.parse import urlencode
 
 from pocketrocks.constants import connect_path
@@ -24,28 +25,25 @@ def build_connection_url(server_url: str, bot_id: str, protocol_version: int, ca
 
 
 def build_decision_context(request: DecisionRequest, *, received_at: int) -> DecisionContext:
+    """Shape a reconstructed game state into the public ``DecisionContext``.
+
+    Every field ``ReconstructedDecisionContext`` (the generated core) carries is
+    also a field of ``DecisionContext`` with the same name and value, so those are
+    copied by name-matching — defined once, not restated. If upstream regenerates
+    and adds a field the public type lacks, the spread raises loudly instead of
+    drifting silently. The six request- and derivation-scoped fields that have no
+    counterpart on the core are set explicitly.
+    """
     reconstructed = reconstruct_decision_context(request)
+    shared = {field.name: getattr(reconstructed, field.name) for field in fields(reconstructed)}
     return DecisionContext(
         request_id=request.request_id,
         deadline_at=request.deadline_at,
         received_at=received_at,
         decision_kind=request.decision_kind,
-        player_count=reconstructed.player_count,
-        starting_cash=reconstructed.starting_cash,
-        value_chart=reconstructed.value_chart,
-        objective_ids=reconstructed.objective_ids,
-        current_action_id=reconstructed.current_action_id,
-        current_resource_ids=reconstructed.current_resource_ids,
-        cash_by_seat=reconstructed.cash_by_seat,
-        tiebreak_seat=reconstructed.tiebreak_seat,
-        won_resource_counts_by_seat=reconstructed.won_resource_counts_by_seat,
-        revealed_info_counts_by_seat=reconstructed.revealed_info_counts_by_seat,
-        owned_objective_ids_by_seat=reconstructed.owned_objective_ids_by_seat,
-        bot_seat=reconstructed.bot_seat,
-        current_hand_suit_ids=reconstructed.current_hand_suit_ids,
-        legal_max_amount=reconstructed.legal_max_amount,
         revealable_count=len(reconstructed.current_hand_suit_ids),
         metadata={},
+        **shared,
     )
 
 
