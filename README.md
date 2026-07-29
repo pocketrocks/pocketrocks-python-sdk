@@ -138,8 +138,8 @@ Each entry in the list you pass to `run_games` (a `BotProvider`) can be:
   called in a given worker process, so the (possibly expensive) load happens
   once per worker, not once per game. Prefer a named function over a
   `lambda` here — with `workers>1` the factory has to be pickled to reach the
-  worker process, and lambdas aren't picklable under Windows' `spawn` start
-  method. A `lambda` is fine only if you're pinned to `workers=1`.
+  worker process, and lambdas aren't picklable. A `lambda` is fine only if
+  you're pinned to `workers=1`.
 
 To collect what your bot actually saw and did — for RL training data or
 debugging — pass `record_decisions=True` and read `result.decisions`
