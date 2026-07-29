@@ -17,6 +17,7 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 
+from pocketrocks._update_check import maybe_warn_if_stale
 from pocketrocks.bot import PocketRocksBot
 
 from .game import GameResult, LocalGame, bot_label
@@ -98,6 +99,7 @@ def run_games(
     record_decisions: bool = False,
     decision_budget_ms: int = 60_000,
 ) -> BenchmarkSummary:
+    maybe_warn_if_stale()
     n = len(providers)
     if not 3 <= n <= 5:
         raise ValueError("PocketRocks supports 3-5 players")

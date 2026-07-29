@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from pocketrocks._logging import install_default_logging
+from pocketrocks._update_check import maybe_warn_if_stale
 from pocketrocks.config import BotConfig
 from pocketrocks.runtime import PocketRocksRuntime
 from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
@@ -57,6 +58,7 @@ class PocketRocksBot(ABC):
             raise ValueError("api_key is required")
         if self.config.bot_id is None:
             raise ValueError("bot_id is required")
+        maybe_warn_if_stale()
         runtime = PocketRocksRuntime(bot=self, config=self.config, transport=self.transport)
         await runtime.run()
 
