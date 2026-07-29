@@ -89,3 +89,15 @@ def test_large_run_streams_without_retaining_results() -> None:
     assert summary.n_games == 101
     assert sum(stats.wins for stats in summary.bots) == 101
     assert all(stats.games == 101 for stats in summary.bots)
+
+
+def test_parallel_window_submits_replacements() -> None:
+    # 6 games with workers=2 → in-flight window of 4, so at least two games
+    # are submitted as replacements after earlier results are consumed.
+    # Verifies the bounded-window path aggregates every game exactly once.
+    summary = run_games([MaxBot, PassBot, PassBot], 6, workers=2)
+    assert summary.n_games == 6
+    assert sum(stats.wins for stats in summary.bots) == 6
+    assert all(stats.games_by_seat == (2, 2, 2) for stats in summary.bots)
+    assert len(summary.results) == 6  # kept (n_games <= 100), in game order
+    assert all(result is not None for result in summary.results)

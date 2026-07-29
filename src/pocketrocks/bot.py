@@ -58,7 +58,9 @@ class PocketRocksBot(ABC):
             raise ValueError("api_key is required")
         if self.config.bot_id is None:
             raise ValueError("bot_id is required")
-        maybe_warn_if_stale()
+        # Threaded so the blocking urllib fetch (and its DNS resolution) never
+        # stalls an application-owned event loop that awaits run_async().
+        await asyncio.to_thread(maybe_warn_if_stale)
         runtime = PocketRocksRuntime(bot=self, config=self.config, transport=self.transport)
         await runtime.run()
 

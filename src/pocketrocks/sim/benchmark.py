@@ -14,7 +14,7 @@ results, not from bot instance state.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 from typing import cast
 
@@ -164,20 +164,31 @@ def run_games(
             _aggregate(i, result)
     else:
         with ProcessPoolExecutor(max_workers=workers) as pool:
-            future_to_index = {
-                pool.submit(
-                    _play_one_game, list(providers), seed_list[i], rotations[i],
-                    value_chart, record_decisions, decision_budget_ms
-                ): i
-                for i in range(n_games)
-            }
-            for future in as_completed(list(future_to_index)):
-                # pop() drops our strong reference to the completed Future:
-                # a Future retains its result internally, so keeping all of
-                # them in the dict would hold every GameResult until the end
-                # anyway, defeating the streaming aggregation.
-                i = future_to_index.pop(future)
-                _aggregate(i, future.result())
+
+            def _submit(game_index: int) -> Future[GameResult]:
+                return pool.submit(
+                    _play_one_game, list(providers), seed_list[game_index],
+                    rotations[game_index], value_chart, record_decisions,
+                    decision_budget_ms,
+                )
+
+            # Keep only a bounded window of jobs in flight: submitting all
+            # n_games up front would retain O(n_games) Futures (and, for fast
+            # games, their completed GameResults) in the parent before
+            # aggregation starts. Replacements are submitted as results are
+            # consumed, and popping each completed Future drops our last
+            # strong reference so its internally-retained result is released.
+            window = max(workers * 2, 1)
+            in_flight = {_submit(i): i for i in range(min(window, n_games))}
+            next_index = min(window, n_games)
+            while in_flight:
+                done, _pending = wait(in_flight, return_when=FIRST_COMPLETED)
+                for future in done:
+                    i = in_flight.pop(future)
+                    _aggregate(i, future.result())
+                    if next_index < n_games:
+                        in_flight[_submit(next_index)] = next_index
+                        next_index += 1
 
     if game0_seats is not None:
         labels = [game0_seats[(p + rotations[0]) % n] for p in range(n)]
