@@ -171,8 +171,12 @@ def run_games(
                 ): i
                 for i in range(n_games)
             }
-            for future in as_completed(future_to_index):
-                i = future_to_index[future]
+            for future in as_completed(list(future_to_index)):
+                # pop() drops our strong reference to the completed Future:
+                # a Future retains its result internally, so keeping all of
+                # them in the dict would hold every GameResult until the end
+                # anyway, defeating the streaming aggregation.
+                i = future_to_index.pop(future)
                 _aggregate(i, future.result())
 
     if game0_seats is not None:
