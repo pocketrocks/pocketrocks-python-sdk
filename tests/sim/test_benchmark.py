@@ -78,3 +78,14 @@ def test_factory_called_once_per_game_not_for_labeling() -> None:
 def test_seeds_length_mismatch_raises() -> None:
     with pytest.raises(ValueError, match="seeds length"):
         run_games([MaxBot, PassBot, PassBot], 3, seeds=["only-one"])
+
+
+def test_large_run_streams_without_retaining_results() -> None:
+    # n_games=101 exceeds _KEEP_RESULTS_MAX (100), so results must be
+    # dropped rather than accumulated -- this is what keeps peak memory
+    # bounded for large benchmark runs.
+    summary = run_games([PassBot, PassBot, PassBot], 101, workers=1)
+    assert summary.results == ()
+    assert summary.n_games == 101
+    assert sum(stats.wins for stats in summary.bots) == 101
+    assert all(stats.games == 101 for stats in summary.bots)

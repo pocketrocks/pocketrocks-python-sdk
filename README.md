@@ -76,7 +76,7 @@ deploy live — no separate "training" API to learn.
 from pocketrocks.sim import LocalGame
 
 result = LocalGame(
-    [MyBot(), OtherBot()],
+    [MyBot(), OtherBot(), ThirdBot()],
     seed=0,                     # anything hashable-as-string; same seed -> same game
     value_chart="A",
     objectives_enabled=True,

@@ -14,8 +14,9 @@ results, not from bot instance state.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import cast
 
 from pocketrocks._update_check import maybe_warn_if_stale
 from pocketrocks.bot import PocketRocksBot
@@ -119,36 +120,31 @@ def run_games(
         raise ValueError("seeds length must equal n_games")
     rotations = [(i % n if rotate_seats else 0) for i in range(n_games)]
 
-    if workers <= 1:
-        results = [
-            _play_one_game(providers, seed_list[i], rotations[i], value_chart,
-                           record_decisions, decision_budget_ms)
-            for i in range(n_games)
-        ]
-    else:
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            futures = [
-                pool.submit(_play_one_game, list(providers), seed_list[i], rotations[i],
-                            value_chart, record_decisions, decision_budget_ms)
-                for i in range(n_games)
-            ]
-            results = [future.result() for future in futures]
+    # Aggregate incrementally instead of collecting every GameResult into a
+    # list: with many games and small results retained (kept=()), holding
+    # every result until the end would peak memory at O(n_games) regardless
+    # of what the summary ultimately returns. ``keep`` decides up front
+    # whether results are retained at all.
+    keep = record_decisions or n_games <= _KEEP_RESULTS_MAX
+    kept_results: list[GameResult | None] = [None] * n_games if keep else []
 
-    if results:
-        # Derive labels from the bots that actually played (game 0's seated
-        # instances) instead of instantiating each provider a second time:
-        # a stateful factory would report a stale/wrong label here, and the
-        # documented memoize-in-worker factory pattern would otherwise pay an
-        # extra un-memoized load in the parent process just to read a name.
-        labels = [results[0].seats[(p + rotations[0]) % n] for p in range(n)]
-    else:
-        labels = [_provider_label(provider) for provider in providers]
     wins = [0] * n
     score_sums = [0.0] * n
     wins_by_seat = [[0] * n for _ in range(n)]
     games_by_seat = [[0] * n for _ in range(n)]
-    for i, result in enumerate(results):
-        rotation = rotations[i]
+    game0_seats: tuple[str, ...] | None = None
+
+    def _aggregate(game_index: int, result: GameResult) -> None:
+        nonlocal game0_seats
+        if game_index == 0:
+            # Derive labels from the bots that actually played (game 0's
+            # seated instances) instead of instantiating each provider a
+            # second time: a stateful factory would report a stale/wrong
+            # label here, and the documented memoize-in-worker factory
+            # pattern would otherwise pay an extra un-memoized load in the
+            # parent process just to read a name.
+            game0_seats = result.seats
+        rotation = rotations[game_index]
         for provider_index in range(n):
             seat = (provider_index + rotation) % n
             games_by_seat[provider_index][seat] += 1
@@ -156,6 +152,33 @@ def run_games(
             if result.winner_seat == seat:
                 wins[provider_index] += 1
                 wins_by_seat[provider_index][seat] += 1
+        if keep:
+            kept_results[game_index] = result
+
+    if workers <= 1:
+        for i in range(n_games):
+            result = _play_one_game(
+                providers, seed_list[i], rotations[i], value_chart,
+                record_decisions, decision_budget_ms
+            )
+            _aggregate(i, result)
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            future_to_index = {
+                pool.submit(
+                    _play_one_game, list(providers), seed_list[i], rotations[i],
+                    value_chart, record_decisions, decision_budget_ms
+                ): i
+                for i in range(n_games)
+            }
+            for future in as_completed(future_to_index):
+                i = future_to_index[future]
+                _aggregate(i, future.result())
+
+    if game0_seats is not None:
+        labels = [game0_seats[(p + rotations[0]) % n] for p in range(n)]
+    else:
+        labels = [_provider_label(provider) for provider in providers]
 
     stats = tuple(
         BotStats(
@@ -169,5 +192,8 @@ def run_games(
         )
         for p in range(n)
     )
-    kept = tuple(results) if (record_decisions or n_games <= _KEEP_RESULTS_MAX) else ()
+    # Once fully populated (keep=True implies every index 0..n_games-1 was
+    # assigned a real GameResult by _aggregate above), the None placeholders
+    # are gone -- cast narrows the type back for BenchmarkSummary.results.
+    kept = cast("tuple[GameResult, ...]", tuple(kept_results)) if keep else ()
     return BenchmarkSummary(n_games=n_games, bots=stats, results=kept)

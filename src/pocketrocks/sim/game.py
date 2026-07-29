@@ -71,11 +71,10 @@ class LocalGame:
         self._decisions: list[DecisionRecord] = []
 
     def play(self) -> GameResult:
-        maybe_warn_if_stale()
         return asyncio.run(self.play_async())
 
     async def play_async(self) -> GameResult:
-        maybe_warn_if_stale()
+        await asyncio.to_thread(maybe_warn_if_stale)
         engine = self._engine
         while engine.flip_action() is not None:
             turn = engine.turn_index
