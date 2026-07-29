@@ -1,6 +1,7 @@
 """Local simulation toolkit: train and evaluate bots offline against the
 canonical rules, using the exact same bot class you deploy live."""
 
+from . import sample_bots
 from .benchmark import BenchmarkSummary, BotProvider, BotStats, run_games
 from .engine import SimEngine, TurnOutcome
 from .game import DecisionRecord, GameResult, LocalGame, bot_label
@@ -20,4 +21,5 @@ __all__ = [
     "TurnRecord",
     "bot_label",
     "run_games",
+    "sample_bots",
 ]

@@ -89,3 +89,15 @@ many games at once — is done for you by the SDK.
 
 For the full list of what `context` gives you and other hooks you can override,
 see the main [SDK README](../README.md#bot-api-reference).
+
+## 7. Train it locally before you go live
+
+```bash
+python train.py
+```
+
+This runs your bot against the built-in sample opponents entirely offline —
+no server, no `.env`, no credentials needed — and prints a win-rate summary,
+so you can tell whether an edit actually helped before spending a real game on
+it. Keep looping steps 6 and 7 until you're happy, then go live again with
+`python bot.py`.
