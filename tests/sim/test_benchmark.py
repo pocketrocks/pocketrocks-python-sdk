@@ -22,6 +22,14 @@ def _pass_factory() -> PassBot:
     return PassBot()
 
 
+_counting_calls: list[int] = []
+
+
+def _counting_factory() -> PassBot:
+    _counting_calls.append(1)
+    return PassBot()
+
+
 def test_seat_rotation_and_aggregation() -> None:
     summary = run_games([MaxBot, PassBot, PassBot], 6, rotate_seats=True)
     assert summary.n_games == 6
@@ -58,3 +66,15 @@ def test_parallel_smoke() -> None:
     summary = run_games([MaxBot, PassBot, PassBot], 4, workers=2)
     assert summary.n_games == 4
     assert sum(stats.wins for stats in summary.bots) == 4
+
+
+def test_factory_called_once_per_game_not_for_labeling() -> None:
+    _counting_calls.clear()
+    summary = run_games([MaxBot, _counting_factory, PassBot], 3, workers=1)
+    assert len(_counting_calls) == 3
+    assert summary.bots[1].label == "PassBot"
+
+
+def test_seeds_length_mismatch_raises() -> None:
+    with pytest.raises(ValueError, match="seeds length"):
+        run_games([MaxBot, PassBot, PassBot], 3, seeds=["only-one"])

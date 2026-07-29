@@ -132,7 +132,15 @@ def run_games(
             ]
             results = [future.result() for future in futures]
 
-    labels = [_provider_label(provider) for provider in providers]
+    if results:
+        # Derive labels from the bots that actually played (game 0's seated
+        # instances) instead of instantiating each provider a second time:
+        # a stateful factory would report a stale/wrong label here, and the
+        # documented memoize-in-worker factory pattern would otherwise pay an
+        # extra un-memoized load in the parent process just to read a name.
+        labels = [results[0].seats[(p + rotations[0]) % n] for p in range(n)]
+    else:
+        labels = [_provider_label(provider) for provider in providers]
     wins = [0] * n
     score_sums = [0.0] * n
     wins_by_seat = [[0] * n for _ in range(n)]
