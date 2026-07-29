@@ -39,6 +39,12 @@ INVEST_PAYOUT: dict[str, int] = {"Invest5": 5, "Invest10": 10}
 ACTION_WIRE_IDS: dict[str, int] = dict(bot_wire_action_ids)
 ALL_OBJECTIVE_WIRE_IDS: tuple[int, ...] = tuple(range(1, 31))
 
+OBJECTIVE_PAYOUTS: dict[int, int] = {
+    1: 5, 2: 10, 3: 5, 4: 10, 5: 15,          # any-pattern objectives
+    **{wire_id: 5 for wire_id in range(6, 21)},    # per-suit pairs + two-suit sets
+    **{wire_id: 10 for wire_id in range(21, 31)},  # three-suit sets
+}
+
 
 def objective_pattern_met(objective_wire_id: int, counts_by_suit: Sequence[int]) -> bool:
     """Whether a won-resource count vector satisfies an objective. Mirrors both
