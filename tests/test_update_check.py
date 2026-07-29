@@ -139,3 +139,24 @@ def test_kickoff_reserves_before_spawning(monkeypatch: pytest.MonkeyPatch) -> No
     update_check.kickoff_update_check()  # worker still parked; must not respawn
     release.set()
     assert started == ["spawned"]
+
+
+def test_atexit_join_is_bounded_and_lets_check_finish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = threading.Event()
+    done = threading.Event()
+
+    def slow_fetch(url: str, timeout: float) -> bytes:
+        release.wait(timeout=5)
+        done.set()
+        return REMOTE_SAME
+
+    registered: list[object] = []
+    monkeypatch.setattr(update_check, "_fetch", slow_fetch)
+    monkeypatch.setattr(update_check.atexit, "register", lambda fn: registered.append(fn))
+    update_check.kickoff_update_check()
+    assert registered == [update_check._join_worker]
+    release.set()
+    update_check._join_worker()  # the shutdown hook: bounded, lets the fetch land
+    assert done.is_set()

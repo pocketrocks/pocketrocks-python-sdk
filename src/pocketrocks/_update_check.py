@@ -16,6 +16,7 @@ suppressible through the standard warning filters.
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
 import threading
@@ -34,6 +35,17 @@ _RULES_RE = re.compile(r"RULES_VERSION\s*=\s*([0-9]+)")
 _checked = False
 _kicked = False
 _lock = threading.Lock()
+_worker: threading.Thread | None = None
+# Bounded shutdown wait: covers the fetch's 1s timeout in the common case so a
+# short-lived script still surfaces the advisory, without letting a pathological
+# DNS stall hold the interpreter open indefinitely (the worker is a daemon).
+_JOIN_TIMEOUT_S = 1.5
+
+
+def _join_worker() -> None:
+    worker = _worker
+    if worker is not None and worker.is_alive():
+        worker.join(timeout=_JOIN_TIMEOUT_S)
 
 
 class StaleSDKWarning(UserWarning):
@@ -54,16 +66,23 @@ def kickoff_update_check() -> None:
     callers cannot each spawn a thread — exactly one worker ever starts per
     process.
     """
-    global _kicked
+    global _kicked, _worker
     if os.environ.get("POCKETROCKS_SKIP_VERSION_CHECK"):
         return
     with _lock:
         if _kicked or _checked:
             return
         _kicked = True
-    threading.Thread(
+    worker = threading.Thread(
         target=maybe_warn_if_stale, name="pocketrocks-update-check", daemon=True
-    ).start()
+    )
+    _worker = worker
+    # A daemon thread is discarded at interpreter shutdown; a one-LocalGame
+    # script could exit before the fetch completes and never see the advisory.
+    # The bounded atexit join keeps startup non-blocking while giving the
+    # check a fair chance to finish before the process ends.
+    atexit.register(_join_worker)
+    worker.start()
 
 
 def maybe_warn_if_stale(*, timeout: float = 1.0) -> None:

@@ -101,3 +101,11 @@ def test_parallel_window_submits_replacements() -> None:
     assert all(stats.games_by_seat == (2, 2, 2) for stats in summary.bots)
     assert len(summary.results) == 6  # kept (n_games <= 100), in game order
     assert all(result is not None for result in summary.results)
+
+
+def test_worker_pool_uses_spawn_context() -> None:
+    # Fork-after-thread hangs: the update-check worker (or user threads) may
+    # be live when the pool is created, so the pool must never fork.
+    from pocketrocks.sim.benchmark import _MP_CONTEXT
+
+    assert _MP_CONTEXT.get_start_method() == "spawn"

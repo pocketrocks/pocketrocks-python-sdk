@@ -13,6 +13,7 @@ results, not from bot instance state.
 
 from __future__ import annotations
 
+import multiprocessing
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass
@@ -26,6 +27,13 @@ from .game import GameResult, LocalGame, bot_label
 BotProvider = PocketRocksBot | type[PocketRocksBot] | Callable[[], PocketRocksBot]
 
 _KEEP_RESULTS_MAX = 100
+
+# Always spawn, never fork: run_games has already started the update-check
+# thread (and user code may run others), and forking a multithreaded process
+# can leave inherited locks permanently held in workers. Spawn also makes the
+# documented pickling model (providers must be classes/module-level factories)
+# the actual behavior on every platform, not just Windows.
+_MP_CONTEXT = multiprocessing.get_context("spawn")
 
 
 def _instantiate(provider: BotProvider) -> PocketRocksBot:
@@ -163,7 +171,7 @@ def run_games(
             )
             _aggregate(i, result)
     else:
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=_MP_CONTEXT) as pool:
 
             def _submit(game_index: int) -> Future[GameResult]:
                 return pool.submit(
