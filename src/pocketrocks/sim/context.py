@@ -1,0 +1,86 @@
+"""Build live-identical ``DecisionContext``s from sim state.
+
+The sim never assembles contexts by hand: it builds the same ``DecisionRequest``
+the live server would send (the engine's accumulated wire events + the seat's
+private hand) and hands it to the SDK's production ``build_decision_context``.
+Whatever the live wire derives, the sim derives — by construction.
+
+Determinism contract: every *game-state* field of a simulated context is a pure
+function of the seed and the bots' decisions. The wall-clock fields
+(``deadline_at``, ``received_at``, and the derived ``remaining_deadline_ms``)
+are intentionally real: they model the live time budget and are stamped from
+the current clock, so a bot that branches on them is excluded from the
+same-seed reproducibility guarantee. Strategy should read game state; deadline
+fields are for budget management only.
+"""
+
+from __future__ import annotations
+
+import time
+import uuid
+
+from pocketrocks.internal.bot_wire_v2 import DecisionRequest
+from pocketrocks.protocol import build_decision_context
+from pocketrocks.types import DecisionContext, decisionKind
+
+from .engine import SimEngine
+
+_SIM_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "pocketrocks-sim")
+
+
+def build_sim_request(
+    engine: SimEngine,
+    seat: int,
+    kind: decisionKind,
+    *,
+    budget_ms: int,
+    turn_index: int | None = None,
+) -> DecisionRequest:
+    now = int(time.time() * 1000)
+    effective_turn_index = engine.turn_index if turn_index is None else turn_index
+    request_id = str(
+        uuid.uuid5(_SIM_NAMESPACE, f"{engine.seed}:{effective_turn_index}:{seat}:{kind}")
+    )
+    return DecisionRequest(
+        kind="decisionRequest",
+        request_id=request_id,
+        deadline_at=now + budget_ms,
+        decision_kind=kind,
+        common_events=tuple(engine.events),
+        bot_seat=seat,
+        current_hand_suit_ids=tuple(engine.players[seat].hand_suits),
+    )
+
+
+def build_sim_request_and_context(
+    engine: SimEngine,
+    seat: int,
+    kind: decisionKind,
+    *,
+    budget_ms: int,
+    turn_index: int | None = None,
+) -> tuple[DecisionRequest, DecisionContext]:
+    """Build the wire request and its derived context together.
+
+    ``LocalGame`` needs both: the context for ``choose_decision`` and the raw
+    request frame for bots that override the ``choose_raw_decision`` escape
+    hatch (mirroring the live runtime's dispatch).
+    """
+    request = build_sim_request(
+        engine, seat, kind, budget_ms=budget_ms, turn_index=turn_index
+    )
+    return request, build_decision_context(request, received_at=int(time.time() * 1000))
+
+
+def build_sim_context(
+    engine: SimEngine,
+    seat: int,
+    kind: decisionKind,
+    *,
+    budget_ms: int,
+    turn_index: int | None = None,
+) -> DecisionContext:
+    _request, context = build_sim_request_and_context(
+        engine, seat, kind, budget_ms=budget_ms, turn_index=turn_index
+    )
+    return context

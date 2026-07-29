@@ -1,14 +1,19 @@
 # PocketRocks Python SDK
 
-Python SDK for connecting long-running external bots to a PocketRocks server.
+Python SDK for building, training, and connecting PocketRocks bots. Train
+locally against the canonical rules engine; deploy the same class to the live
+server.
 
-**This is a connector library, not a place to build your bot.** You install it
-into your *own* project and write your bot there — the same way you'd install
-`requests` or `numpy`. This repo is the SDK's source code; it is not your bot's
-home. Think of it as the plug, not the appliance.
+**This is a connector and training library, not a place to build your bot.**
+You install it into your *own* project and write your bot there — the same
+way you'd install `requests` or `numpy`. This repo is the SDK's source code;
+it is not your bot's home. Think of it as the plug, not the appliance — even
+though the appliance now includes a test bench: `pocketrocks.sim` lets you
+train and evaluate your bot offline, but that training happens in *your*
+project too, against the same `PocketRocksBot` class you'll deploy live.
 
 - ✅ **Do:** create your own project, install this SDK into a virtual
-  environment, and write your bot against its API.
+  environment, and write (and train) your bot against its API.
 - ❌ **Don't:** build, edit, or run your bot inside this repository.
 
 If you just want to get a bot running, **start here → [`starter/`](starter/)**.
@@ -55,6 +60,145 @@ POCKETROCKS_SERVER_URL=wss://pocketrocks.xyz
 The SDK loads `.env` automatically when your bot starts. `.env` is git-ignored
 so your secret key stays local. (Prefer to pass values in code instead? Every
 setting is also a constructor argument — see [Configuration](#configuration).)
+
+---
+
+## Local training & simulation
+
+You don't need a server, an API key, or a bot ID to develop your strategy.
+`pocketrocks.sim` runs the exact same rules engine the live server uses,
+entirely in-process, against the exact same `PocketRocksBot` subclass you
+deploy live — no separate "training" API to learn.
+
+### One game: `LocalGame`
+
+```python
+from pocketrocks.sim import LocalGame
+
+result = LocalGame(
+    [MyBot(), OtherBot(), ThirdBot()],
+    seed=0,                     # anything hashable-as-string; same seed -> same game
+    value_chart="A",
+    objectives_enabled=True,
+    decision_budget_ms=60_000,
+    record_decisions=False,
+).play()
+
+print(result.ranking)   # seats, best to worst
+print(result.scores)    # one ScoreRow per seat
+```
+
+`LocalGame` takes 3-5 bot instances and plays one seeded game synchronously
+(`play()`) or as a coroutine (`await play_async()`). A bot that raises or
+returns an illegal decision doesn't crash the game — it gets the live
+server's timeout fallback (bid 0 / reveal the first card), exactly as it
+would in production. Note that the local sim does not enforce the decision
+time budget itself (it just reports `decision_budget_ms` through
+`remaining_deadline_ms`) — only the live server actually times out a slow
+decision, so latency-sensitive bots should still be load-tested against a
+real server with realistic budgets before deploying.
+
+### Many games: `run_games`
+
+```python
+from pocketrocks.sim import run_games
+
+summary = run_games(
+    [MyBot, OtherBot, ThirdBot],   # see "providers" below
+    n_games=500,
+    seeds=None,          # default: "game-0", "game-1", ... ; or pass your own
+    rotate_seats=True,   # rotate providers through seats so seat bias averages out
+    workers=1,           # >1 uses a process pool
+    value_chart="A",
+    record_decisions=False,
+    decision_budget_ms=60_000,
+)
+print(summary)   # win rate, mean score, and wins-by-seat per bot
+```
+
+`run_games` plays `n_games` seeded `LocalGame`s and returns a
+`BenchmarkSummary` — per-bot `BotStats` (win rate, mean score, wins/games by
+seat) plus the raw `GameResult`s (kept in full when `record_decisions=True`
+or `n_games` is small; otherwise dropped to keep memory bounded).
+
+### Providers: instance, class, or factory
+
+Each entry in the list you pass to `run_games` (a `BotProvider`) can be:
+
+- **An instance** — `MyBot()`. Only valid with `workers=1`. With multiple
+  workers the instance would have to be pickled into each worker process, and
+  any state it accumulated there would be silently lost — so `run_games`
+  raises instead of returning a wrong result.
+- **A class** — `MyBot`. Instantiated fresh, once per game, inside the
+  worker. Safe with any `workers` value.
+- **A zero-arg factory** — a module-level function, e.g.
+  `def make_bot(): return MyBot(...)`. Instantiated the same way as a class.
+  This is the pattern for evaluating an RL policy: have the factory load and
+  memoize your model weights in a module-level global the first time it's
+  called in a given worker process, so the (possibly expensive) load happens
+  once per worker, not once per game. Prefer a named function over a
+  `lambda` here — with `workers>1` the factory has to be pickled to reach the
+  worker process, and lambdas aren't picklable. A `lambda` is fine only if
+  you're pinned to `workers=1`.
+
+To collect what your bot actually saw and did — for RL training data or
+debugging — pass `record_decisions=True` and read `result.decisions`
+(`DecisionRecord`: turn index, seat, decision kind, the exact
+`DecisionContext`, the bot's `BotDecision`, and whether a fallback fired).
+Don't try to recover this from bot instance state — with `workers>1` your
+instance never comes back from the worker process, and even with `workers=1`
+a fresh instance is constructed per game for class/factory providers.
+
+### Sample opponents
+
+```python
+from pocketrocks.sim.sample_bots import AlwaysPassBot, RandomBot, GreedyValueBot, ValueTraderBot
+```
+
+Four ready-made opponents, ordered roughly weakest to strongest, ship inside
+the package so a starter project can import them without copying code:
+`AlwaysPassBot` (bids nothing), `RandomBot(seed=...)` (uniform random legal
+bids, seeded), `GreedyValueBot` (bids proportional to its hand's implied
+value in the offered suits), and `ValueTraderBot` (chases suits it holds
+information about, conserves cash otherwise). Benchmark your bot against them
+with `run_games([MyBot, GreedyValueBot, ValueTraderBot, AlwaysPassBot], 500)`.
+
+### Determinism
+
+Same `seed`, same bots, same moves, every time: `LocalGame` and `run_games`
+seed the engine's RNG from the `seed` you pass (a `run_games` game's seed
+defaults to `f"game-{i}"` but you can supply your own list; the empty string
+is rejected). Anything your bot itself does — e.g. a `RandomBot(seed=...)` —
+is only reproducible if you seed *that* too; the sim doesn't reach into your
+bot's internals. One deliberate exception: the deadline fields
+(`deadline_at`, `received_at`, `remaining_deadline_ms`) are stamped from the
+real clock to model the live time budget, so a bot that branches on them is
+excluded from the same-seed guarantee — read game state for strategy, use
+deadline fields for budget management only.
+
+### Staying in sync with the live rules
+
+Local results are only meaningful if the local rules match the ones the live
+server enforces. Every `LocalGame`/`run_games` call does a best-effort,
+silent, at-most-once-per-process check against this repo's default branch and
+logs a warning if a newer SDK — especially one with a game **rules** change —
+is available. It never blocks or raises; if you're offline, or you want to
+turn it off entirely (e.g. in CI), set:
+
+```bash
+export POCKETROCKS_SKIP_VERSION_CHECK=1
+```
+
+### Watch your bot play
+
+Local sim is for fast iteration — at some point you'll want to see your bot
+in an actual game against other people:
+
+1. Run your bot for real: `python bot.py` (needs the `.env` credentials from
+   [Quickstart](#quickstart-5-steps)).
+2. Open [pocketrocks.xyz](https://pocketrocks.xyz) in your browser.
+3. Create a room.
+4. Invite your bot to the room and start the game.
 
 ---
 

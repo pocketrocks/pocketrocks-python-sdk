@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from pocketrocks._logging import install_default_logging
+from pocketrocks._update_check import kickoff_update_check
 from pocketrocks.config import BotConfig
 from pocketrocks.runtime import PocketRocksRuntime
 from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
@@ -46,10 +47,6 @@ class PocketRocksBot(ABC):
             reconnect_max_delay_seconds=reconnect_max_delay_seconds,
             rejected_reconnect_max_delay_seconds=rejected_reconnect_max_delay_seconds,
         )
-        if self.config.api_key is None:
-            raise ValueError("api_key is required")
-        if self.config.bot_id is None:
-            raise ValueError("bot_id is required")
         self.transport = transport
 
     def run(self) -> None:
@@ -57,6 +54,13 @@ class PocketRocksBot(ABC):
         asyncio.run(self.run_async())
 
     async def run_async(self) -> None:
+        if self.config.api_key is None:
+            raise ValueError("api_key is required")
+        if self.config.bot_id is None:
+            raise ValueError("bot_id is required")
+        # Fire-and-forget: the advisory check must never gate startup or
+        # stall an application-owned event loop.
+        kickoff_update_check()
         runtime = PocketRocksRuntime(bot=self, config=self.config, transport=self.transport)
         await runtime.run()
 
