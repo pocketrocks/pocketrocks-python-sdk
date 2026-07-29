@@ -11,7 +11,7 @@ from pocketrocks.bot import PocketRocksBot
 from pocketrocks.exceptions import InvalidBotDecision
 from pocketrocks.types import BotDecision, DecisionContext, decisionKind
 
-from .context import build_sim_context
+from .context import build_sim_request_and_context
 from .engine import SimEngine
 from .state import ScoreRow, TurnRecord
 
@@ -103,13 +103,18 @@ class LocalGame:
     async def _ask(
         self, seat: int, bot: PocketRocksBot, kind: decisionKind, turn_index: int
     ) -> tuple[BotDecision | None, str | None, DecisionContext]:
-        context = build_sim_context(
+        request, context = build_sim_request_and_context(
             self._engine, seat, kind, budget_ms=self._budget_ms, turn_index=turn_index
         )
         decision: BotDecision | None = None
         fallback: str | None = None
         try:
-            decision = await bot.choose_decision(context)
+            # Mirror the live runtime's dispatch: bots overriding the
+            # choose_raw_decision escape hatch get the wire frame too.
+            if bot.uses_raw_decision():
+                decision = await bot.choose_raw_decision(request, context)
+            else:
+                decision = await bot.choose_decision(context)
             context.validate(decision)
         except InvalidBotDecision:
             fallback = "illegal"

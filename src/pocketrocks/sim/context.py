@@ -44,6 +44,26 @@ def build_sim_request(
     )
 
 
+def build_sim_request_and_context(
+    engine: SimEngine,
+    seat: int,
+    kind: decisionKind,
+    *,
+    budget_ms: int,
+    turn_index: int | None = None,
+) -> tuple[DecisionRequest, DecisionContext]:
+    """Build the wire request and its derived context together.
+
+    ``LocalGame`` needs both: the context for ``choose_decision`` and the raw
+    request frame for bots that override the ``choose_raw_decision`` escape
+    hatch (mirroring the live runtime's dispatch).
+    """
+    request = build_sim_request(
+        engine, seat, kind, budget_ms=budget_ms, turn_index=turn_index
+    )
+    return request, build_decision_context(request, received_at=int(time.time() * 1000))
+
+
 def build_sim_context(
     engine: SimEngine,
     seat: int,
@@ -52,7 +72,7 @@ def build_sim_context(
     budget_ms: int,
     turn_index: int | None = None,
 ) -> DecisionContext:
-    request = build_sim_request(
+    _request, context = build_sim_request_and_context(
         engine, seat, kind, budget_ms=budget_ms, turn_index=turn_index
     )
-    return build_decision_context(request, received_at=int(time.time() * 1000))
+    return context

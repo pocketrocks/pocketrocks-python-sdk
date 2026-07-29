@@ -94,3 +94,31 @@ def test_reveal_decisions_stamped_with_their_own_turn_index() -> None:
             if d.kind == "submitBid" and d.turn_index == turn_index
         }
         assert bid_seats, f"expected bid decisions recorded for turn {turn_index}"
+
+
+class RawOnlyBot(PocketRocksBot):
+    """Mirrors examples/raw_frame_bot.py: strategy lives in the raw override,
+    choose_decision deliberately raises. The live runtime dispatches to
+    choose_raw_decision for such bots; the sim must do the same or every
+    decision silently becomes a fallback."""
+
+    async def choose_decision(self, context: DecisionContext) -> BotDecision:
+        raise RuntimeError("raw bots never use the derived-context path")
+
+    async def choose_raw_decision(self, frame: object, context: DecisionContext) -> BotDecision:
+        from pocketrocks.internal.bot_wire_v2 import DecisionRequest
+
+        assert isinstance(frame, DecisionRequest)
+        assert frame.decision_kind == context.decision_kind
+        if context.decision_kind == "submitBid":
+            return BotDecision.submit_bid(min(1, context.legal_max_amount or 0))
+        return BotDecision.select_info_to_reveal(0)
+
+
+def test_raw_decision_bots_get_live_dispatch() -> None:
+    result = LocalGame([RawOnlyBot(), PassBot(), PassBot()], seed=11,
+                       record_decisions=True).play()
+    raw_seat_decisions = [d for d in result.decisions if d.seat == 0]
+    assert raw_seat_decisions, "raw bot was never asked"
+    assert all(d.fallback is None for d in raw_seat_decisions)
+    assert len(result.scores) == 3
