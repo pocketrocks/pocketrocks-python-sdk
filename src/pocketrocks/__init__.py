@@ -1,5 +1,6 @@
 import logging
 
+from pocketrocks._version import __version__
 from pocketrocks.bot import PocketRocksBot
 from pocketrocks.reference import (
     ACTION_DESCRIPTIONS,
@@ -20,6 +21,8 @@ from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
 logging.getLogger("pocketrocks").addHandler(logging.NullHandler())
 
 __all__ = [
+    # Version
+    "__version__",
     # Core
     "PocketRocksBot",
     "BotDecision",

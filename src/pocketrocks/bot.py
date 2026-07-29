@@ -46,10 +46,6 @@ class PocketRocksBot(ABC):
             reconnect_max_delay_seconds=reconnect_max_delay_seconds,
             rejected_reconnect_max_delay_seconds=rejected_reconnect_max_delay_seconds,
         )
-        if self.config.api_key is None:
-            raise ValueError("api_key is required")
-        if self.config.bot_id is None:
-            raise ValueError("bot_id is required")
         self.transport = transport
 
     def run(self) -> None:
@@ -57,6 +53,10 @@ class PocketRocksBot(ABC):
         asyncio.run(self.run_async())
 
     async def run_async(self) -> None:
+        if self.config.api_key is None:
+            raise ValueError("api_key is required")
+        if self.config.bot_id is None:
+            raise ValueError("bot_id is required")
         runtime = PocketRocksRuntime(bot=self, config=self.config, transport=self.transport)
         await runtime.run()
 
