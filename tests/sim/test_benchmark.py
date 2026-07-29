@@ -109,3 +109,8 @@ def test_worker_pool_uses_spawn_context() -> None:
     from pocketrocks.sim.benchmark import _MP_CONTEXT
 
     assert _MP_CONTEXT.get_start_method() == "spawn"
+
+
+def test_negative_n_games_rejected() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        run_games([MaxBot, PassBot, PassBot], -1)

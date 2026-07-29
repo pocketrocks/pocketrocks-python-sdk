@@ -112,6 +112,8 @@ def run_games(
     n = len(providers)
     if not 3 <= n <= 5:
         raise ValueError("PocketRocks supports 3-5 players")
+    if n_games < 0:
+        raise ValueError("n_games must be non-negative")
     if workers > 1:
         for provider in providers:
             if isinstance(provider, PocketRocksBot):
