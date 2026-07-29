@@ -75,14 +75,17 @@ class LocalGame:
     async def play_async(self) -> GameResult:
         engine = self._engine
         while engine.flip_action() is not None:
+            turn = engine.turn_index
             raw_bids: list[int] = []
             for seat, bot in enumerate(self._bots):
-                raw_bids.append(await self._ask_bid(seat, bot))
+                raw_bids.append(await self._ask_bid(seat, bot, turn))
             outcome = engine.resolve(raw_bids)
             if outcome.reveal_needed == "auto":
                 engine.apply_reveal(outcome.winner_seat, 0, auto=True)
             elif outcome.reveal_needed == "choice":
-                index = await self._ask_reveal(outcome.winner_seat, self._bots[outcome.winner_seat])
+                index = await self._ask_reveal(
+                    outcome.winner_seat, self._bots[outcome.winner_seat], turn
+                )
                 engine.apply_reveal(outcome.winner_seat, index, auto=False)
         scores = tuple(engine.score())
         ranking = tuple(engine.ranking())
@@ -96,9 +99,11 @@ class LocalGame:
         )
 
     async def _ask(
-        self, seat: int, bot: PocketRocksBot, kind: decisionKind
+        self, seat: int, bot: PocketRocksBot, kind: decisionKind, turn_index: int
     ) -> tuple[BotDecision | None, str | None, DecisionContext]:
-        context = build_sim_context(self._engine, seat, kind, budget_ms=self._budget_ms)
+        context = build_sim_context(
+            self._engine, seat, kind, budget_ms=self._budget_ms, turn_index=turn_index
+        )
         decision: BotDecision | None = None
         fallback: str | None = None
         try:
@@ -111,7 +116,7 @@ class LocalGame:
         if self._record:
             self._decisions.append(
                 DecisionRecord(
-                    turn_index=self._engine.turn_index,
+                    turn_index=turn_index,
                     seat=seat,
                     kind=kind,
                     context=context,
@@ -121,14 +126,16 @@ class LocalGame:
             )
         return decision, fallback, context
 
-    async def _ask_bid(self, seat: int, bot: PocketRocksBot) -> int:
-        decision, fallback, _context = await self._ask(seat, bot, "submitBid")
+    async def _ask_bid(self, seat: int, bot: PocketRocksBot, turn_index: int) -> int:
+        decision, fallback, _context = await self._ask(seat, bot, "submitBid", turn_index)
         if fallback is not None or decision is None or decision.action_kind != "submitBid":
             return 0  # pass, crash, and illegal all bid 0 — the server's fallback
         return decision.value or 0
 
-    async def _ask_reveal(self, seat: int, bot: PocketRocksBot) -> int:
-        decision, fallback, _context = await self._ask(seat, bot, "selectInfoToReveal")
+    async def _ask_reveal(self, seat: int, bot: PocketRocksBot, turn_index: int) -> int:
+        decision, fallback, _context = await self._ask(
+            seat, bot, "selectInfoToReveal", turn_index
+        )
         if (
             fallback is not None
             or decision is None

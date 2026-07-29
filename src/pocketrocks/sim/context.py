@@ -21,11 +21,17 @@ _SIM_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "pocketrocks-sim")
 
 
 def build_sim_request(
-    engine: SimEngine, seat: int, kind: decisionKind, *, budget_ms: int
+    engine: SimEngine,
+    seat: int,
+    kind: decisionKind,
+    *,
+    budget_ms: int,
+    turn_index: int | None = None,
 ) -> DecisionRequest:
     now = int(time.time() * 1000)
+    effective_turn_index = engine.turn_index if turn_index is None else turn_index
     request_id = str(
-        uuid.uuid5(_SIM_NAMESPACE, f"{engine.seed}:{engine.turn_index}:{seat}:{kind}")
+        uuid.uuid5(_SIM_NAMESPACE, f"{engine.seed}:{effective_turn_index}:{seat}:{kind}")
     )
     return DecisionRequest(
         kind="decisionRequest",
@@ -39,7 +45,14 @@ def build_sim_request(
 
 
 def build_sim_context(
-    engine: SimEngine, seat: int, kind: decisionKind, *, budget_ms: int
+    engine: SimEngine,
+    seat: int,
+    kind: decisionKind,
+    *,
+    budget_ms: int,
+    turn_index: int | None = None,
 ) -> DecisionContext:
-    request = build_sim_request(engine, seat, kind, budget_ms=budget_ms)
+    request = build_sim_request(
+        engine, seat, kind, budget_ms=budget_ms, turn_index=turn_index
+    )
     return build_decision_context(request, received_at=int(time.time() * 1000))
