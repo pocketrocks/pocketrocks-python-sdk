@@ -237,6 +237,8 @@ class SimEngine:
     def apply_reveal(self, seat: int, hand_index: int, *, auto: bool) -> RevealRecord:
         if not self.history:
             raise RuntimeError("apply_reveal() called before resolve()")
+        if self.history[-1].reveal is not None:
+            raise RuntimeError("apply_reveal() called twice for the same turn")
         player = self.players[seat]
         if not player.hand_suits:
             raise RuntimeError("apply_reveal() on an empty hand")

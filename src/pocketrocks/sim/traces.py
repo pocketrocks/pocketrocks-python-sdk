@@ -11,13 +11,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from .constants import ACTION_WIRE_IDS, INFO_CARDS_PER_PLAYER, STARTING_CASH
 from .engine import SimEngine
 
 
 def replay_trace(trace: dict[str, Any]) -> None:
     setup = trace["setup"]
+    player_count = int(trace["playerCount"])
     engine = SimEngine(
-        int(trace["playerCount"]),
+        player_count,
         str(trace["seed"]),
         value_chart=str(trace["valueChartKey"]),
     )
@@ -33,11 +35,21 @@ def replay_trace(trace: dict[str, Any]) -> None:
     assert [oid for oid, _ in engine.active_objectives] == setup["objectiveWireIds"], (
         f"{label}: objective selection"
     )
+    assert setup["startingCash"] == STARTING_CASH[player_count], f"{label}: starting cash constant"
+    assert all(p.cash == setup["startingCash"] for p in engine.players), (
+        f"{label}: dealt starting cash"
+    )
+    assert setup["infoCardsPerPlayer"] == INFO_CARDS_PER_PLAYER[player_count], (
+        f"{label}: info cards per player"
+    )
+    assert list(engine.value_chart) == trace["valueChart"], f"{label}: value chart"
 
     for i, turn in enumerate(trace["turns"]):
         where = f"{label} turn {i}"
         action = engine.flip_action()
+        assert action is not None, f"{where}: expected another turn"
         assert action == turn["actionType"], f"{where}: flipped action"
+        assert ACTION_WIRE_IDS[action] == turn["actionWireId"], f"{where}: action wire id"
         assert list(engine.upcoming) == turn["upcomingBefore"], f"{where}: upcoming"
         outcome = engine.resolve(turn["rawBids"])
         assert list(outcome.effective_bids) == turn["effectiveBids"], f"{where}: effective bids"

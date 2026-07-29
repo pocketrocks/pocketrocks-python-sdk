@@ -92,7 +92,11 @@ print(result.scores)    # one ScoreRow per seat
 (`play()`) or as a coroutine (`await play_async()`). A bot that raises or
 returns an illegal decision doesn't crash the game — it gets the live
 server's timeout fallback (bid 0 / reveal the first card), exactly as it
-would in production.
+would in production. Note that the local sim does not enforce the decision
+time budget itself (it just reports `decision_budget_ms` through
+`remaining_deadline_ms`) — only the live server actually times out a slow
+decision, so latency-sensitive bots should still be load-tested against a
+real server with realistic budgets before deploying.
 
 ### Many games: `run_games`
 
@@ -127,12 +131,15 @@ Each entry in the list you pass to `run_games` (a `BotProvider`) can be:
   raises instead of returning a wrong result.
 - **A class** — `MyBot`. Instantiated fresh, once per game, inside the
   worker. Safe with any `workers` value.
-- **A zero-arg factory** — `lambda: MyBot(...)` or a plain function.
-  Instantiated the same way as a class. This is the pattern for evaluating an
-  RL policy: have the factory load and memoize your model weights in a
-  module-level global the first time it's called in a given worker process,
-  so the (possibly expensive) load happens once per worker, not once per
-  game.
+- **A zero-arg factory** — a module-level function, e.g.
+  `def make_bot(): return MyBot(...)`. Instantiated the same way as a class.
+  This is the pattern for evaluating an RL policy: have the factory load and
+  memoize your model weights in a module-level global the first time it's
+  called in a given worker process, so the (possibly expensive) load happens
+  once per worker, not once per game. Prefer a named function over a
+  `lambda` here — with `workers>1` the factory has to be pickled to reach the
+  worker process, and lambdas aren't picklable under Windows' `spawn` start
+  method. A `lambda` is fine only if you're pinned to `workers=1`.
 
 To collect what your bot actually saw and did — for RL training data or
 debugging — pass `record_decisions=True` and read `result.decisions`

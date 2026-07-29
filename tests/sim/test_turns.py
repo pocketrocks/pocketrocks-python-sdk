@@ -178,6 +178,16 @@ def test_apply_reveal_before_resolve_raises() -> None:
         engine.apply_reveal(0, 0, auto=False)
 
 
+def test_apply_reveal_twice_for_same_turn_raises() -> None:
+    engine = _engine_with("Auction1")
+    engine.flip_action()
+    engine.players[0].hand_suits = [1, 2]
+    engine.resolve([5, 0, 0])
+    engine.apply_reveal(0, 1, auto=False)
+    with pytest.raises(RuntimeError):
+        engine.apply_reveal(0, 0, auto=False)
+
+
 def test_reveal_needed_auto_when_one_card_left() -> None:
     engine = _engine_with("Auction1")
     engine.flip_action()
