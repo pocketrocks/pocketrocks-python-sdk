@@ -99,6 +99,12 @@ class DecisionContext:
             if decision.action_kind == "submitBid":
                 if decision.value is None:
                     raise InvalidBotDecision("submitBid responses require a value")
+                if not isinstance(decision.value, int):
+                    # A float (e.g. from an untyped model output) satisfies the
+                    # range comparisons but is not encodable as a wire varint
+                    # and not usable as an index — reject it as illegal rather
+                    # than letting it crash outside the fallback net.
+                    raise InvalidBotDecision("bid must be an integer")
                 if self.legal_max_amount is not None and decision.value > self.legal_max_amount:
                     raise InvalidBotDecision("bid exceeds legal maximum")
                 if decision.value < 0:
@@ -109,6 +115,8 @@ class DecisionContext:
         if decision.action_kind == "selectInfoToReveal":
             if decision.value is None:
                 raise InvalidBotDecision("selectInfoToReveal responses require a card index")
+            if not isinstance(decision.value, int):
+                raise InvalidBotDecision("card index must be an integer")
             if decision.value < 0 or decision.value >= self.revealable_count:
                 raise InvalidBotDecision("card index is out of range")
 

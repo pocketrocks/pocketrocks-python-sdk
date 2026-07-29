@@ -122,3 +122,25 @@ def test_raw_decision_bots_get_live_dispatch() -> None:
     assert raw_seat_decisions, "raw bot was never asked"
     assert all(d.fallback is None for d in raw_seat_decisions)
     assert len(result.scores) == 3
+
+
+class FloatRevealBot(PocketRocksBot):
+    """Returns a non-integral reveal index (as an untyped model output might).
+    Range checks alone would accept 0.5; it must be rejected as illegal, not
+    crash the game via list.pop(0.5) outside the fallback net."""
+
+    async def choose_decision(self, context: DecisionContext) -> BotDecision:
+        if context.decision_kind == "submitBid":
+            return BotDecision.submit_bid(context.legal_max_amount or 0)
+        return BotDecision("selectInfoToReveal", 0.5)  # type: ignore[arg-type]
+
+
+def test_non_integral_values_become_illegal_fallbacks() -> None:
+    result = LocalGame([FloatRevealBot(), PassBot(), PassBot()], seed=13,
+                       record_decisions=True).play()
+    assert len(result.scores) == 3  # the game completed — no TypeError escape
+    reveal_decisions = [
+        d for d in result.decisions if d.seat == 0 and d.kind == "selectInfoToReveal"
+    ]
+    assert reveal_decisions, "winner was never asked to reveal"
+    assert all(d.fallback == "illegal" for d in reveal_decisions)
