@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import logging
+import threading
+import warnings
 
 import pytest
 
 import pocketrocks._update_check as update_check
+from pocketrocks._update_check import StaleSDKWarning
 
 REMOTE_NEWER = b'__version__ = "9.9.9"\nRULES_VERSION = 99\n'
 REMOTE_SAME = (
@@ -15,6 +17,7 @@ REMOTE_SAME = (
 @pytest.fixture(autouse=True)
 def _reset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(update_check, "_checked", False)
+    monkeypatch.setattr(update_check, "_kicked", False)
     monkeypatch.delenv("POCKETROCKS_SKIP_VERSION_CHECK", raising=False)
 
 
@@ -26,31 +29,36 @@ def _fake_fetch(payload: bytes | Exception):
     return fetch
 
 
-def test_warns_when_behind(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
+def _stale_warnings(record: list[warnings.WarningMessage]) -> list[warnings.WarningMessage]:
+    return [w for w in record if issubclass(w.category, StaleSDKWarning)]
+
+
+def test_warns_when_behind(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(update_check, "_fetch", _fake_fetch(REMOTE_NEWER))
-    with caplog.at_level(logging.WARNING, logger="pocketrocks"):
+    # warnings, not logging: the package logger carries a NullHandler, so a log
+    # record would be invisible in zero-config scripts — the exact audience of
+    # this safeguard.
+    with pytest.warns(StaleSDKWarning) as record:
         update_check.maybe_warn_if_stale()
-    assert any("9.9.9" in r.message and "rules" in r.message.lower() for r in caplog.records)
+    message = str(record[0].message)
+    assert "9.9.9" in message
+    assert "rules" in message.lower()
 
 
-def test_silent_when_current(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_silent_when_current(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(update_check, "_fetch", _fake_fetch(REMOTE_SAME))
-    with caplog.at_level(logging.WARNING, logger="pocketrocks"):
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
         update_check.maybe_warn_if_stale()
-    assert not caplog.records
+    assert not _stale_warnings(record)
 
 
-def test_silent_on_network_failure(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_silent_on_network_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(update_check, "_fetch", _fake_fetch(OSError("offline")))
-    with caplog.at_level(logging.WARNING, logger="pocketrocks"):
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
         update_check.maybe_warn_if_stale()
-    assert not caplog.records
+    assert not _stale_warnings(record)
 
 
 def test_runs_once_per_process(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,8 +90,6 @@ def test_kickoff_spawns_no_thread_when_skipped(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_kickoff_runs_check_in_background(monkeypatch: pytest.MonkeyPatch) -> None:
-    import threading
-
     fetched = threading.Event()
 
     def fake_fetch(url: str, timeout: float) -> bytes:
@@ -96,8 +102,6 @@ def test_kickoff_runs_check_in_background(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_kickoff_noop_after_check_ran(monkeypatch: pytest.MonkeyPatch) -> None:
-    import threading
-
     monkeypatch.setattr(update_check, "_fetch", lambda url, timeout: REMOTE_SAME)
     update_check.maybe_warn_if_stale()  # sets _checked
     started: list[str] = []
@@ -110,3 +114,28 @@ def test_kickoff_noop_after_check_ran(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(update_check.threading, "Thread", spy_thread)
     update_check.kickoff_update_check()
     assert not started  # no thread churn once the once-per-process check ran
+
+
+def test_kickoff_reserves_before_spawning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Repeated/concurrent kickoffs spawn exactly one worker: the reservation
+    is taken under the lock BEFORE the thread starts, so callers racing in
+    while the fetch is still parked cannot each create a thread."""
+    release = threading.Event()
+
+    def parked_fetch(url: str, timeout: float) -> bytes:
+        release.wait(timeout=5)
+        return REMOTE_SAME
+
+    monkeypatch.setattr(update_check, "_fetch", parked_fetch)
+    started: list[str] = []
+    real_thread = threading.Thread
+
+    def spy_thread(*args: object, **kwargs: object) -> threading.Thread:
+        started.append("spawned")
+        return real_thread(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(update_check.threading, "Thread", spy_thread)
+    update_check.kickoff_update_check()
+    update_check.kickoff_update_check()  # worker still parked; must not respawn
+    release.set()
+    assert started == ["spawned"]
