@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from pocketrocks._update_check import maybe_warn_if_stale
+from pocketrocks._update_check import kickoff_update_check
 from pocketrocks.bot import PocketRocksBot
 from pocketrocks.exceptions import InvalidBotDecision
 from pocketrocks.types import BotDecision, DecisionContext, decisionKind
@@ -74,7 +74,7 @@ class LocalGame:
         return asyncio.run(self.play_async())
 
     async def play_async(self) -> GameResult:
-        await asyncio.to_thread(maybe_warn_if_stale)
+        kickoff_update_check()
         engine = self._engine
         while engine.flip_action() is not None:
             turn = engine.turn_index

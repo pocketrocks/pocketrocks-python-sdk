@@ -30,3 +30,8 @@ def test_input_not_mutated() -> None:
     items = list(range(10))
     shuffled(items, "abc")
     assert items == list(range(10))
+
+
+def test_empty_seed_rejected() -> None:
+    with pytest.raises(ValueError, match="non-empty"):
+        shuffled(list(range(5)), "")

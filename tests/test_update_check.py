@@ -71,3 +71,42 @@ def test_env_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     update_check.maybe_warn_if_stale()
     assert not calls
+
+
+def test_kickoff_spawns_no_thread_when_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setenv("POCKETROCKS_SKIP_VERSION_CHECK", "1")
+    monkeypatch.setattr(update_check, "_fetch", lambda url, timeout: calls.append(url) or b"")
+    update_check.kickoff_update_check()
+    assert not calls
+
+
+def test_kickoff_runs_check_in_background(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+
+    fetched = threading.Event()
+
+    def fake_fetch(url: str, timeout: float) -> bytes:
+        fetched.set()
+        return REMOTE_SAME
+
+    monkeypatch.setattr(update_check, "_fetch", fake_fetch)
+    update_check.kickoff_update_check()
+    assert fetched.wait(timeout=5), "background check never ran"
+
+
+def test_kickoff_noop_after_check_ran(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+
+    monkeypatch.setattr(update_check, "_fetch", lambda url, timeout: REMOTE_SAME)
+    update_check.maybe_warn_if_stale()  # sets _checked
+    started: list[str] = []
+    real_thread = threading.Thread
+
+    def spy_thread(*args: object, **kwargs: object) -> threading.Thread:
+        started.append("spawned")
+        return real_thread(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(update_check.threading, "Thread", spy_thread)
+    update_check.kickoff_update_check()
+    assert not started  # no thread churn once the once-per-process check ran

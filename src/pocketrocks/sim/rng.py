@@ -95,6 +95,10 @@ def _integer_upto(rng: _MersenneTwister, max_inclusive: int) -> int:
 def shuffled(items: Sequence[_T], seed: str) -> list[_T]:
     """Return a shuffled copy of ``items``; same algorithm and output as the
     TS ``shuffled(arr, seed)`` in ``@pocketrocks/shared``."""
+    if not seed:
+        # An empty seed would hand init_by_array an empty key (undefined
+        # behavior upstream too) — reject it before it becomes an IndexError.
+        raise ValueError("seed must be a non-empty string")
     result = list(items)
     rng = _MersenneTwister(list(seed.encode("utf-8")))
     for i in range(len(result) - 1, 0, -1):

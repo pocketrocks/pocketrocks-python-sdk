@@ -4,6 +4,14 @@ The sim never assembles contexts by hand: it builds the same ``DecisionRequest``
 the live server would send (the engine's accumulated wire events + the seat's
 private hand) and hands it to the SDK's production ``build_decision_context``.
 Whatever the live wire derives, the sim derives — by construction.
+
+Determinism contract: every *game-state* field of a simulated context is a pure
+function of the seed and the bots' decisions. The wall-clock fields
+(``deadline_at``, ``received_at``, and the derived ``remaining_deadline_ms``)
+are intentionally real: they model the live time budget and are stamped from
+the current clock, so a bot that branches on them is excluded from the
+same-seed reproducibility guarantee. Strategy should read game state; deadline
+fields are for budget management only.
 """
 
 from __future__ import annotations

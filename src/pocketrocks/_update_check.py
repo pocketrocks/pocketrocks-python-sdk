@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 import urllib.request
 
 from pocketrocks._version import RULES_VERSION, __version__
@@ -27,16 +28,35 @@ _checked = False
 _logger = logging.getLogger("pocketrocks")
 
 
+_lock = threading.Lock()
+
+
 def _fetch(url: str, timeout: float) -> bytes:
     with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310
         return bytes(response.read())
 
 
-def maybe_warn_if_stale(*, timeout: float = 1.0) -> None:
-    global _checked
+def kickoff_update_check() -> None:
+    """Run the staleness check once, on a daemon thread, without gating the caller.
+
+    Entry points (LocalGame, run_games, the live runtime) call this instead of
+    the blocking check so game execution never waits on the network, DNS, or
+    the timeout — and after the first run the flag check below makes this a
+    no-op, so repeated games spawn no further threads.
+    """
     if _checked or os.environ.get("POCKETROCKS_SKIP_VERSION_CHECK"):
         return
-    _checked = True
+    threading.Thread(
+        target=maybe_warn_if_stale, name="pocketrocks-update-check", daemon=True
+    ).start()
+
+
+def maybe_warn_if_stale(*, timeout: float = 1.0) -> None:
+    global _checked
+    with _lock:
+        if _checked or os.environ.get("POCKETROCKS_SKIP_VERSION_CHECK"):
+            return
+        _checked = True
     try:
         text = _fetch(_RAW_URL, timeout).decode("utf-8", errors="replace")
         version_match = _VERSION_RE.search(text)

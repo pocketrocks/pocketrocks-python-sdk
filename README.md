@@ -167,9 +167,14 @@ with `run_games([MyBot, GreedyValueBot, ValueTraderBot, AlwaysPassBot], 500)`.
 
 Same `seed`, same bots, same moves, every time: `LocalGame` and `run_games`
 seed the engine's RNG from the `seed` you pass (a `run_games` game's seed
-defaults to `f"game-{i}"` but you can supply your own list). Anything your
-bot itself does — e.g. a `RandomBot(seed=...)` — is only reproducible if you
-seed *that* too; the sim doesn't reach into your bot's internals.
+defaults to `f"game-{i}"` but you can supply your own list; the empty string
+is rejected). Anything your bot itself does — e.g. a `RandomBot(seed=...)` —
+is only reproducible if you seed *that* too; the sim doesn't reach into your
+bot's internals. One deliberate exception: the deadline fields
+(`deadline_at`, `received_at`, `remaining_deadline_ms`) are stamped from the
+real clock to model the live time budget, so a bot that branches on them is
+excluded from the same-seed guarantee — read game state for strategy, use
+deadline fields for budget management only.
 
 ### Staying in sync with the live rules
 

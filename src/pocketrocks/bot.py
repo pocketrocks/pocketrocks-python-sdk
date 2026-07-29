@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from pocketrocks._logging import install_default_logging
-from pocketrocks._update_check import maybe_warn_if_stale
+from pocketrocks._update_check import kickoff_update_check
 from pocketrocks.config import BotConfig
 from pocketrocks.runtime import PocketRocksRuntime
 from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
@@ -58,9 +58,9 @@ class PocketRocksBot(ABC):
             raise ValueError("api_key is required")
         if self.config.bot_id is None:
             raise ValueError("bot_id is required")
-        # Threaded so the blocking urllib fetch (and its DNS resolution) never
-        # stalls an application-owned event loop that awaits run_async().
-        await asyncio.to_thread(maybe_warn_if_stale)
+        # Fire-and-forget: the advisory check must never gate startup or
+        # stall an application-owned event loop.
+        kickoff_update_check()
         runtime = PocketRocksRuntime(bot=self, config=self.config, transport=self.transport)
         await runtime.run()
 
