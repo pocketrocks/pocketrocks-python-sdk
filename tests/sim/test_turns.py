@@ -22,6 +22,59 @@ def test_flip_emits_turn_opened_with_upcoming() -> None:
     assert event.resource_ids == (engine.upcoming[0], engine.upcoming[1])
 
 
+def test_scalar_facade_preserves_public_list_identity_and_order() -> None:
+    engine = _engine_with("Auction2", "mutable-compatibility")
+    player = engine.players[0]
+    player.won_suits[:] = [5, 1, 5]
+    player.revealed_suits[:] = [4, 2]
+    player.objective_wire_ids[:] = [8, 3]
+    aliases = {
+        "hand": player.hand_suits,
+        "won": player.won_suits,
+        "revealed": player.revealed_suits,
+        "objectives": player.objective_wire_ids,
+        "upcoming": engine.upcoming,
+        "pile": engine.pile,
+        "actions": engine.action_deck,
+        "active_objectives": engine.active_objectives,
+    }
+    expected_bundle = list(engine.upcoming)
+
+    engine.flip_action()
+    outcome = engine.resolve([5, 0, 0])
+
+    assert outcome.winner_seat == 0
+    assert player.won_suits == [5, 1, 5, *expected_bundle]
+    assert player.revealed_suits == [4, 2]
+    assert player.objective_wire_ids[:2] == [8, 3]
+    assert aliases["hand"] is player.hand_suits
+    assert aliases["won"] is player.won_suits
+    assert aliases["revealed"] is player.revealed_suits
+    assert aliases["objectives"] is player.objective_wire_ids
+    assert aliases["upcoming"] is engine.upcoming
+    assert aliases["pile"] is engine.pile
+    assert aliases["actions"] is engine.action_deck
+    assert aliases["active_objectives"] is engine.active_objectives
+
+
+def test_scalar_facade_reveal_mutates_aliased_lists_in_place() -> None:
+    engine = _engine_with("Auction1", "mutable-reveal")
+    player = engine.players[0]
+    player.hand_suits[:] = [1, 2]
+    player.revealed_suits[:] = [4, 2]
+    hand_alias = player.hand_suits
+    revealed_alias = player.revealed_suits
+
+    engine.flip_action()
+    engine.resolve([5, 0, 0])
+    engine.apply_reveal(0, 1, auto=False)
+
+    assert hand_alias is player.hand_suits
+    assert revealed_alias is player.revealed_suits
+    assert player.hand_suits == [1]
+    assert player.revealed_suits == [4, 2, 2]
+
+
 def test_bid_clamped_to_cash_on_normal_actions() -> None:
     engine = _engine_with("Auction1")
     engine.flip_action()
