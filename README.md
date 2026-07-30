@@ -175,6 +175,36 @@ The main policy-facing arrays are fixed-shape numeric values:
 `BatchSimEngine` is the throughput interface: batch size one still runs the
 NumPy kernel and therefore pays fixed array setup/dispatch overhead.
 
+#### From batch training to live play
+
+A policy trained against batch arrays still deploys as a `PocketRocksBot`:
+live games only speak the context/decision protocol. Every batch array a
+policy reads has a `DecisionContext` counterpart — the wrapper bot recomputes
+its features from these fields:
+
+| Batch array (seat `s` of game `g`) | `DecisionContext` attribute |
+| --- | --- |
+| `legal_max_bids()[g, s]` | `legal_max_amount` |
+| `cash[g, s]` | `cash_by_seat[bot_seat]` |
+| `won_counts[g, s]` | `won_resource_counts_by_seat[bot_seat]` |
+| `upcoming[g]` | `current_resource_ids` |
+| `hand_cards[g, s]` (`0`-padded) | `current_hand_suit_ids` (no padding) |
+
+Reveal indices live in the same space on both sides — an index into the
+seat's current (compacted) hand — but batch uses the `-1` sentinel for rows
+with no pending reveal, while a live bot is only asked when a choice exists.
+The two runtimes also fail differently on purpose: `BatchSimEngine` raises on
+invalid reveal indices or non-integer dtypes (fail-fast, so RL bugs surface at
+the call site), while `LocalGame` and the live server apply the timeout
+fallback instead.
+
+[`examples/train_batch_deploy_live.py`](examples/train_batch_deploy_live.py)
+is the worked path: train on batch arrays, wrap the policy in a bot, then —
+always — validate the wrapped bot with `run_games` before pointing it at the
+live server. That replay exercises the exact context/decision path the live
+server uses, so feature-mapping mistakes show up offline instead of in a
+live game.
+
 ### Providers: instance, class, or factory
 
 Each entry in the list you pass to `run_games` (a `BotProvider`) can be:

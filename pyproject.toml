@@ -16,6 +16,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  # mypy --strict is only clean with numpy >= 2.1 stubs; 1.26 stubs produce
+  # 3 spurious errors, so don't "fix" those by touching src.
   "numpy>=2.1,<2.3",
   "pytest>=8",
   "pytest-asyncio>=0.23",
