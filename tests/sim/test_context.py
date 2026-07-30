@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 from pocketrocks.internal.bot_wire_v2 import decode_frame, encode_frame
-from pocketrocks.sim.context import build_sim_context
+from pocketrocks.protocol import build_decision_context
+from pocketrocks.sim.context import build_sim_context, build_sim_request_and_context
 from pocketrocks.sim.engine import SimEngine
 
 
@@ -51,3 +54,70 @@ def test_state_evolves_into_context() -> None:
     assert context.cash_by_seat[0] == 25  # 30 - 5
     assert sum(context.won_resource_counts_by_seat[0]) == 1
     assert context.tiebreak_seat == 0
+
+
+def test_context_does_not_reconstruct_event_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = SimEngine(3, "ctx-direct")
+    engine.flip_action()
+
+    def fail_if_called(*args: object, **kwargs: object) -> None:
+        raise AssertionError("sim context replayed the event history")
+
+    monkeypatch.setattr(
+        "pocketrocks.protocol.reconstruct_decision_context",
+        fail_if_called,
+    )
+
+    build_sim_context(engine, seat=0, kind="submitBid", budget_ms=1_000)
+
+
+@pytest.mark.parametrize("player_count", [3, 4, 5])
+@pytest.mark.parametrize("value_chart", ["A", "B", "C", "D", "E"])
+@pytest.mark.parametrize("objectives_enabled", [False, True])
+def test_direct_context_matches_production_reconstruction_through_full_game(
+    player_count: int,
+    value_chart: str,
+    objectives_enabled: bool,
+) -> None:
+    engine = SimEngine(
+        player_count,
+        f"ctx-parity-{player_count}-{value_chart}-{objectives_enabled}",
+        value_chart=value_chart,
+        objectives_enabled=objectives_enabled,
+    )
+
+    while engine.flip_action() is not None:
+        bids: list[int] = []
+        for seat in range(player_count):
+            request, direct = build_sim_request_and_context(
+                engine,
+                seat=seat,
+                kind="submitBid",
+                budget_ms=1_000,
+            )
+            reconstructed = build_decision_context(
+                request,
+                received_at=direct.received_at,
+            )
+            assert direct == reconstructed
+            bids.append((engine.turn_index + seat + 1) % (engine.legal_max_bid(seat) + 1))
+
+        outcome = engine.resolve(bids)
+        if outcome.reveal_needed == "auto":
+            engine.apply_reveal(outcome.winner_seat, 0, auto=True)
+        elif outcome.reveal_needed == "choice":
+            request, direct = build_sim_request_and_context(
+                engine,
+                seat=outcome.winner_seat,
+                kind="selectInfoToReveal",
+                budget_ms=1_000,
+                turn_index=engine.turn_index - 1,
+            )
+            reconstructed = build_decision_context(
+                request,
+                received_at=direct.received_at,
+            )
+            assert direct == reconstructed
+            engine.apply_reveal(outcome.winner_seat, 0, auto=False)
