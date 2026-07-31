@@ -37,3 +37,12 @@ def test_ranking_ties_break_by_seat() -> None:
         p.investments = []
         p.objective_wire_ids = []
     assert engine.ranking() == [0, 1, 2]
+
+
+def test_scalar_scoring_preserves_duplicate_objective_ids() -> None:
+    engine = SimEngine(3, "duplicate-objectives")
+    engine.players[0].objective_wire_ids[:] = [1, 1]
+
+    row = engine.score()[0]
+
+    assert row.objectives_value == 10

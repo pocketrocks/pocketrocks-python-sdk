@@ -121,6 +121,90 @@ print(summary)   # win rate, mean score, and wins-by-seat per bot
 seat) plus the raw `GameResult`s (kept in full when `record_decisions=True`
 or `n_games` is small; otherwise dropped to keep memory bounded).
 
+### Vectorized RL batches: `BatchSimEngine`
+
+For RL systems that already choose actions in batches, `BatchSimEngine` keeps
+all games in compact NumPy arrays and resolves a phase for the whole batch per
+Python call. It intentionally skips bot callbacks, wire contexts, snapshots,
+and event objects:
+
+```python
+import numpy as np
+
+from pocketrocks.sim import BatchSimEngine
+
+engine = BatchSimEngine.start(
+    player_count=3,
+    seeds=tuple(f"episode-{index}" for index in range(1024)),
+)
+while (actions := engine.flip_actions()).any():
+    legal = engine.legal_max_bids()
+    bids = np.zeros_like(legal)  # replace with batched policy output
+    outcome = engine.resolve_bids(bids)
+    reveals = np.full(engine.batch_size, -1, dtype=np.int8)
+    reveals[outcome.reveal_modes > 0] = 0
+    engine.apply_reveals(reveals)
+
+scores = engine.scores()
+rankings = engine.rankings()
+```
+
+One batch has a homogeneous player count; value charts and objective flags may
+vary by row. Use `SimEngine` or `LocalGame` when you need the traditional
+single-game interface, bot callbacks, or canonical trace objects. `SimEngine`
+is a size-one facade over the same batch rules kernel, so scalar and bulk rules
+cannot drift.
+
+Calls follow a strict phase order:
+`flip_actions()` → `legal_max_bids()` / `resolve_bids()` →
+`apply_reveals()`. Call `apply_reveals()` after every resolve, including turns
+where every row uses the `-1` no-reveal sentinel. `reveal_modes` uses `0` for
+none, `1` for an automatic single-card reveal, and `2` for a policy choice.
+Terminal rows return action `0`, winner seat `-1`, and paid amount `0`.
+
+The main policy-facing arrays are fixed-shape numeric values:
+
+| Value | Shape | dtype |
+| --- | --- | --- |
+| legal bids / submitted bids | `(batch, players)` | signed integer |
+| action IDs / reveal modes | `(batch,)` | `uint8` |
+| reveal indices | `(batch,)` | signed integer; `-1` means none |
+| cash / score components | `(batch, players)` | signed integer |
+| hand cards | `(batch, players, max_hand)` | `uint8`; `0` is padding |
+
+`BatchSimEngine` is the throughput interface: batch size one still runs the
+NumPy kernel and therefore pays fixed array setup/dispatch overhead.
+
+#### From batch training to live play
+
+A policy trained against batch arrays still deploys as a `PocketRocksBot`:
+live games only speak the context/decision protocol. Every batch array a
+policy reads has a `DecisionContext` counterpart — the wrapper bot recomputes
+its features from these fields:
+
+| Batch array (seat `s` of game `g`) | `DecisionContext` attribute |
+| --- | --- |
+| `legal_max_bids()[g, s]` | `legal_max_amount` |
+| `cash[g, s]` | `cash_by_seat[bot_seat]` |
+| `won_counts[g, s]` | `won_resource_counts_by_seat[bot_seat]` |
+| `upcoming[g]` | `current_resource_ids` |
+| `hand_cards[g, s]` (`0`-padded) | `current_hand_suit_ids` (no padding) |
+
+Reveal indices live in the same space on both sides — an index into the
+seat's current (compacted) hand — but batch uses the `-1` sentinel for rows
+with no pending reveal, while a live bot is only asked when a choice exists.
+The two runtimes also fail differently on purpose: `BatchSimEngine` raises on
+invalid reveal indices or non-integer dtypes (fail-fast, so RL bugs surface at
+the call site), while `LocalGame` and the live server apply the timeout
+fallback instead.
+
+[`examples/train_batch_deploy_live.py`](examples/train_batch_deploy_live.py)
+is the worked path: train on batch arrays, wrap the policy in a bot, then —
+always — validate the wrapped bot with `run_games` before pointing it at the
+live server. That replay exercises the exact context/decision path the live
+server uses, so feature-mapping mistakes show up offline instead of in a
+live game.
+
 ### Providers: instance, class, or factory
 
 Each entry in the list you pass to `run_games` (a `BotProvider`) can be:

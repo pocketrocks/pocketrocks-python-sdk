@@ -9,12 +9,16 @@ description = "Python SDK for PocketRocks local bots"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "numpy>=2.1",
   "websockets>=14",
   "python-dotenv>=1",
 ]
 
 [project.optional-dependencies]
 dev = [
+  # mypy --strict is only clean with numpy >= 2.1 stubs; 1.26 stubs produce
+  # 3 spurious errors, so don't "fix" those by touching src.
+  "numpy>=2.1,<2.3",
   "pytest>=8",
   "pytest-asyncio>=0.23",
   "ruff>=0.6",
@@ -48,4 +52,3 @@ python_version = "3.10"
 mypy_path = "src"
 strict = true
 warn_unused_configs = true
-
