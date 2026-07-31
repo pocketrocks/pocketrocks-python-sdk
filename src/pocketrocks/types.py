@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pocketrocks.exceptions import InvalidBotDecision
+from pocketrocks.internal.bot_wire_v2 import max_safe_integer
 
 decisionKind = Literal["submitBid", "selectInfoToReveal"]
 decisionActionKind = Literal["pass", "submitBid", "selectInfoToReveal"]
@@ -180,22 +181,49 @@ def _check_clampable(context: DecisionContext, decision: BotDecision) -> None:
         raise InvalidBotDecision("bid must be non-negative")
 
 
+def _wire_correction(decision: BotDecision) -> BotDecision | None:
+    """The wire-representable form of ``decision``, or None if it needs no correction.
+
+    The bot wire carries unsigned varints only (``_encode_varint`` rejects
+    ``value < 0`` and ``value > max_safe_integer``), so a bid outside that range
+    cannot be sent at all — "let the server clamp it" is not available. Clamping
+    to the wire's own bounds is the minimum change that makes the value
+    expressible; it deliberately does NOT consult ``legal_max_amount``, because
+    the game clamp belongs to the server (and to ``SimEngine.record_bid``).
+    """
+    if decision.action_kind != "submitBid" or not isinstance(decision.value, int):
+        return None
+    if decision.value < 0:
+        return BotDecision.submit_bid(0)
+    if decision.value > max_safe_integer:
+        return BotDecision.submit_bid(max_safe_integer)
+    return None
+
+
 def classify(
     context: DecisionContext, decision: BotDecision
-) -> tuple[str, InvalidBotDecision | None]:
-    """Sort ``decision`` into its tier, returning the decision's fate and the reason.
+) -> tuple[str, InvalidBotDecision | None, BotDecision]:
+    """Sort ``decision`` into its tier, returning its fate, the reason, and what to use.
 
-    ``"ok"`` (legal), ``"discarded"`` (Tier A — the bot's value must not reach the
-    rules), or ``"forwarded"`` (Tier B — the value goes on regardless, and the
-    engine clamps it). Both the live runtime and the sim branch on this one
-    function, which is what keeps the two surfaces from drifting.
+    - ``"ok"`` — legal; use the decision as returned.
+    - ``"discarded"`` — the server has no repair path; the bot's value must not reach
+      the rules.
+    - ``"corrected"`` — the value cannot be encoded at all; use the coerced value and
+      report both.
+    - ``"forwarded"`` — the server repairs it; send it unchanged and let the engine clamp.
+
+    The live runtime and the sim both branch on this one function, which is what
+    keeps the two surfaces from drifting.
     """
     try:
         _check_encodable(context, decision)
     except InvalidBotDecision as error:
-        return "discarded", error
+        return "discarded", error, decision
     try:
         _check_clampable(context, decision)
     except InvalidBotDecision as error:
-        return "forwarded", error
-    return "ok", None
+        correction = _wire_correction(decision)
+        if correction is not None:
+            return "corrected", error, correction
+        return "forwarded", error, decision
+    return "ok", None, decision

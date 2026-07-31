@@ -31,13 +31,16 @@ async def report_rejection(
     error: InvalidBotDecision,
     applied: str,
     debug: bool,
+    corrected: BotDecision | None = None,
 ) -> None:
     """Log, emit ``decisionRejected``, and notify the bot that it played illegally.
 
     ``applied`` is the decision's fate in surface-neutral terms — ``"discarded"``
     when the bot's value never reaches the rules, ``"forwarded"`` when it does and
-    the engine clamps it. Naming the outcome rather than the mechanism is what lets
-    the sim and the live runtime emit byte-identical events for the same input.
+    the engine clamps it, or ``"corrected"`` when the value could not be encoded at
+    all and ``corrected`` carries the substituted decision that was sent instead.
+    Naming the outcome rather than the mechanism is what lets the sim and the live
+    runtime emit byte-identical events for the same input.
     """
     details: dict[str, Any] = {
         "request_id": context.request_id,
@@ -47,14 +50,17 @@ async def report_rejection(
         "detail": str(error),
         "applied": applied,
     }
+    if corrected is not None:
+        details["corrected_value"] = corrected.value
     if debug:
         details["context"] = context
     logger.warning(
-        "decision %s rejected (%s %s, %s): %s",
+        "decision %s rejected (%s %s, %s%s): %s",
         context.request_id,
         decision.action_kind,
         decision.value,
         applied,
+        f" -> {corrected.value}" if corrected is not None else "",
         error,
     )
     await bot.on_runtime_event(RuntimeEvent(kind="decisionRejected", details=details))
