@@ -9,6 +9,7 @@ from pocketrocks.internal.bot_wire_v2 import max_safe_integer
 
 decisionKind = Literal["submitBid", "selectInfoToReveal"]
 decisionActionKind = Literal["pass", "submitBid", "selectInfoToReveal"]
+decisionFate = Literal["ok", "discarded", "corrected", "forwarded"]
 runtimeEventKind = Literal[
     "connected",
     "disconnected",
@@ -150,6 +151,10 @@ def _check_encodable(context: DecisionContext, decision: BotDecision) -> None:
             if decision.value is None:
                 raise InvalidBotDecision("submitBid responses require a value")
             if not isinstance(decision.value, int):
+                # A float satisfies every range comparison below but cannot be
+                # encoded as a wire varint at all — there is no value to clamp
+                # or forward, so this belongs in the unrepairable tier, not
+                # the clampable one.
                 raise InvalidBotDecision("bid must be an integer")
         return
     if decision.action_kind == "submitBid":
@@ -167,7 +172,7 @@ def _check_clampable(context: DecisionContext, decision: BotDecision) -> None:
     """Tier B — the server clamps these itself, so forwarding beats swallowing.
 
     ``rules/turns.ts::recordBid`` applies ``max(0, min(amount, legal_max))`` in
-    both the normal and loan branches, and ``SimEngine.record_bid`` mirrors it.
+    both the normal and loan branches, and ``SimEngine.resolve`` mirrors it.
     A bot that trips these still gets to participate; one whose decision is
     swallowed does not.
     """
@@ -189,7 +194,7 @@ def _wire_correction(decision: BotDecision) -> BotDecision | None:
     cannot be sent at all — "let the server clamp it" is not available. Clamping
     to the wire's own bounds is the minimum change that makes the value
     expressible; it deliberately does NOT consult ``legal_max_amount``, because
-    the game clamp belongs to the server (and to ``SimEngine.record_bid``).
+    the game clamp belongs to the server (and to ``SimEngine.resolve``).
     """
     if decision.action_kind != "submitBid" or not isinstance(decision.value, int):
         return None
@@ -202,7 +207,7 @@ def _wire_correction(decision: BotDecision) -> BotDecision | None:
 
 def classify(
     context: DecisionContext, decision: BotDecision
-) -> tuple[str, InvalidBotDecision | None, BotDecision]:
+) -> tuple[decisionFate, InvalidBotDecision | None, BotDecision]:
     """Sort ``decision`` into its tier, returning its fate, the reason, and what to use.
 
     - ``"ok"`` — legal; use the decision as returned.

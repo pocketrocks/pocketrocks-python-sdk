@@ -180,7 +180,24 @@ Passed to `on_runtime_event`. Read-only.
 
 `connected`, `disconnected`, `connectionRejected`, `connectionError`,
 `heartbeatReceived`, `heartbeatSent`, `requestQueued`, `requestDropped`,
-`requestCompleted`, `requestFailed`, `malformedFrame`.
+`requestCompleted`, `requestFailed`, `malformedFrame`, `decisionRejected`.
+
+### `decisionRejected` details
+
+Emitted when a bot's decision fails legality checking. `applied` is the fate
+the SDK's internal `classify()` sorted it into; the possible values are the
+[`decisionFate`](#type-aliases) alias below.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `request_id` | `str` | The request the decision answered. |
+| `decision_kind` | `str` | The request's `decisionKind` (`submitBid` or `selectInfoToReveal`). |
+| `action_kind` | `str` | The bot's decision's `action_kind`. |
+| `value` | `int \| None` | The bot's original value, before any correction. |
+| `detail` | `str` | Human-readable reason the decision was rejected. |
+| `applied` | `str` (`decisionFate`) | `"discarded"`, `"corrected"`, or `"forwarded"`. |
+| `corrected_value` | `int \| None` | Present only when `applied == "corrected"` — the wire-representable value actually sent. |
+| `context` | `DecisionContext` | Present only when `debug` is on. |
 
 ---
 
@@ -236,10 +253,11 @@ Exposed on the dataclasses for reference / type-checking:
 ```python
 decisionKind       = Literal["submitBid", "selectInfoToReveal"]
 decisionActionKind = Literal["pass", "submitBid", "selectInfoToReveal"]
+decisionFate       = Literal["ok", "discarded", "corrected", "forwarded"]
 runtimeEventKind   = Literal[
     "connected", "disconnected", "connectionRejected", "connectionError",
     "heartbeatReceived", "heartbeatSent", "requestQueued", "requestDropped",
-    "requestCompleted", "requestFailed", "malformedFrame",
+    "requestCompleted", "requestFailed", "malformedFrame", "decisionRejected",
 ]
 ```
 

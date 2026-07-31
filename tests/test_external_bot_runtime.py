@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -327,7 +328,7 @@ async def test_runtime_contains_callback_errors_and_keeps_processing():
 class FixedDecisionBot(RecordingBot):
     """Returns one scripted decision regardless of context."""
 
-    def __init__(self, decision: BotDecision, **kwargs) -> None:
+    def __init__(self, decision: BotDecision, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._decision = decision
 
@@ -377,6 +378,8 @@ async def test_overbid_is_forwarded_to_the_server_which_clamps_it():
     assert events[0].details["value"] == 999
     assert "legal maximum" in events[0].details["detail"]
     assert len(bot.errors) == 1
+    # Forwarded still sends a frame, so the request completes like any other.
+    assert [e.kind for e in bot.runtime_events].count("requestCompleted") == 1
 
 
 async def test_negative_bid_is_corrected_to_zero_and_sent():

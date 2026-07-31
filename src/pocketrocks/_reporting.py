@@ -13,7 +13,7 @@ import logging
 from typing import Any, Protocol
 
 from pocketrocks.exceptions import InvalidBotDecision
-from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
+from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent, decisionFate
 
 
 class _RejectionSink(Protocol):
@@ -29,18 +29,21 @@ async def report_rejection(
     context: DecisionContext,
     decision: BotDecision,
     error: InvalidBotDecision,
-    applied: str,
+    applied: decisionFate,
     debug: bool,
-    corrected: BotDecision | None = None,
+    outgoing: BotDecision,
 ) -> None:
     """Log, emit ``decisionRejected``, and notify the bot that it played illegally.
 
     ``applied`` is the decision's fate in surface-neutral terms — ``"discarded"``
     when the bot's value never reaches the rules, ``"forwarded"`` when it does and
     the engine clamps it, or ``"corrected"`` when the value could not be encoded at
-    all and ``corrected`` carries the substituted decision that was sent instead.
-    Naming the outcome rather than the mechanism is what lets the sim and the live
-    runtime emit byte-identical events for the same input.
+    all. ``outgoing`` is what ``classify`` returned alongside ``applied`` — for
+    every fate except ``"corrected"`` it is ``decision`` itself, so deriving the
+    ``corrected_value`` detail from ``applied == "corrected"`` here (rather than
+    at each call site) is what keeps the sim and the live runtime from having to
+    duplicate that condition. Naming the outcome rather than the mechanism is
+    what lets the two surfaces emit byte-identical events for the same input.
     """
     details: dict[str, Any] = {
         "request_id": context.request_id,
@@ -50,8 +53,8 @@ async def report_rejection(
         "detail": str(error),
         "applied": applied,
     }
-    if corrected is not None:
-        details["corrected_value"] = corrected.value
+    if applied == "corrected":
+        details["corrected_value"] = outgoing.value
     if debug:
         details["context"] = context
     logger.warning(
@@ -60,7 +63,7 @@ async def report_rejection(
         decision.action_kind,
         decision.value,
         applied,
-        f" -> {corrected.value}" if corrected is not None else "",
+        f" -> {outgoing.value}" if applied == "corrected" else "",
         error,
     )
     await bot.on_runtime_event(RuntimeEvent(kind="decisionRejected", details=details))

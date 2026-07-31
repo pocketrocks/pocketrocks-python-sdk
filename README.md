@@ -311,7 +311,8 @@ Override any of these coroutines as needed; all are no-ops by default:
 
 `RuntimeEvent.kind` values: `connected`, `disconnected`, `connectionRejected`,
 `connectionError`, `heartbeatReceived`, `heartbeatSent`, `requestQueued`,
-`requestDropped`, `requestCompleted`, `requestFailed`, `malformedFrame`.
+`requestDropped`, `requestCompleted`, `requestFailed`, `malformedFrame`,
+`decisionRejected`.
 
 ### Protocol-aware bots
 
@@ -346,6 +347,7 @@ MyBot(api_key="...", bot_id="123", server_url="wss://host").run()
 | `POCKETROCKS_RECONNECT_MAX_DELAY_SECONDS` | `reconnect_max_delay_seconds` | No | `8` |
 | `POCKETROCKS_REJECTED_RECONNECT_MAX_DELAY_SECONDS` | `rejected_reconnect_max_delay_seconds` | No | `60` |
 | `POCKETROCKS_LOG_LEVEL` | — | No | `INFO` |
+| `POCKETROCKS_DEBUG` | `debug` | No | `false` |
 
 The annotated template is [`.env.example`](.env.example).
 

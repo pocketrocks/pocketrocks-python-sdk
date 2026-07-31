@@ -12,6 +12,13 @@ Deliberately NOT asserted: that both produce the same clamped bid. That is pinne
 by the golden traces against the real TS engine and gated on rulesVersion (see
 sim/traces.py). Re-checking it here would create a third copy of the server's clamp
 formula that nothing keeps in sync — the exact failure this work removes.
+
+Also out of scope: this corpus verifies the *report* — that both surfaces call
+``report_rejection`` with the same details — not the *dispatch*. If the live
+runtime stopped sending a frame for ``"corrected"``, every case here would still
+pass, because nothing here inspects the frames each surface actually sent. The
+per-surface tests in test_external_bot_runtime.py and sim/test_localgame.py are
+what cover dispatch; don't treat a green run here as proof of it.
 """
 
 from __future__ import annotations
@@ -45,6 +52,7 @@ class ScriptedBot(PocketRocksBot):
         super().__init__(**kwargs)
         self._decision = decision
         self.rejections: list[dict[str, Any]] = []
+        self.errors_seen: list[Exception] = []
 
     async def choose_decision(self, context: DecisionContext) -> BotDecision:
         if context.decision_kind == "submitBid":
@@ -56,7 +64,7 @@ class ScriptedBot(PocketRocksBot):
             self.rejections.append(event.details)
 
     async def on_error(self, error: Exception) -> None:
-        return None
+        self.errors_seen.append(error)
 
 
 class PassBot(PocketRocksBot):
@@ -69,6 +77,7 @@ async def _sim_rejection(decision: BotDecision) -> dict[str, Any]:
     # play_async, not play: play() calls asyncio.run() and would explode here.
     await LocalGame([bot, PassBot(), PassBot()], seed=5).play_async()
     assert bot.rejections, "the sim reported no decisionRejected"
+    assert bot.errors_seen, "the sim never called on_error"
     return bot.rejections[0]
 
 
@@ -94,6 +103,7 @@ async def _live_rejection(decision: BotDecision) -> dict[str, Any]:
     )
     await bot.run_async()
     assert bot.rejections, "the live runtime reported no decisionRejected"
+    assert bot.errors_seen, "the live runtime never called on_error"
     return bot.rejections[0]
 
 

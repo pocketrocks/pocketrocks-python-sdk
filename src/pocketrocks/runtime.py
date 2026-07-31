@@ -253,7 +253,7 @@ class PocketRocksRuntime:
                         error=rejection,
                         applied=applied,
                         debug=self.config.debug,
-                        corrected=outgoing if applied == "corrected" else None,
+                        outgoing=outgoing,
                     )
                 # "discarded" means the server has no repair path, so a frame would
                 # be a silent no-op indistinguishable from sending nothing.
@@ -266,8 +266,8 @@ class PocketRocksRuntime:
                     "request %s (%s) -> %s %s",
                     frame.request_id,
                     frame.decision_kind,
-                    decision.action_kind,
-                    decision.value if decision.value is not None else "",
+                    outgoing.action_kind,
+                    outgoing.value if outgoing.value is not None else "",
                 )
                 await self.bot.on_runtime_event(
                     RuntimeEvent(kind="requestCompleted", details={"request_id": frame.request_id})

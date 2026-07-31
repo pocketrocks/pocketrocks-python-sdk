@@ -128,7 +128,7 @@ class LocalGame:
                     error=rejection,
                     applied=applied,
                     debug=bot.config.debug,
-                    corrected=outgoing if applied == "corrected" else None,
+                    outgoing=outgoing,
                 )
             # "forwarded" is not a fallback: the raw value goes to the engine,
             # which clamps it with the same formula the server uses. Only
