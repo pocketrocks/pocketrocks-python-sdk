@@ -20,6 +20,7 @@ runtimeEventKind = Literal[
     "requestCompleted",
     "requestFailed",
     "malformedFrame",
+    "decisionRejected",
 ]
 
 
