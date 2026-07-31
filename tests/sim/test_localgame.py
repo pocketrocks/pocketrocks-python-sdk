@@ -124,6 +124,7 @@ class FloatRevealBot(PocketRocksBot):
     async def choose_decision(self, context: DecisionContext) -> BotDecision:
         if context.decision_kind == "submitBid":
             return BotDecision.submit_bid(context.legal_max_amount or 0)
+        # Deliberately pass float to test SDK rejects non-integral reveal indices.
         return BotDecision("selectInfoToReveal", 0.5)  # type: ignore[arg-type]
 
 
