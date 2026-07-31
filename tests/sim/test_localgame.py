@@ -203,6 +203,50 @@ def test_sim_reports_an_overbid_as_forwarded() -> None:
     assert any(max(turn.effective_bids) > 0 for turn in result.history)
 
 
+class NegativeBidBot(PocketRocksBot):
+    async def choose_decision(self, context: DecisionContext) -> BotDecision:
+        if context.decision_kind == "submitBid":
+            return BotDecision.submit_bid(-1)
+        return BotDecision.select_info_to_reveal(0)
+
+
+def test_negative_bid_record_keeps_the_bots_value_and_flags_the_substitute() -> None:
+    # -1 cannot be encoded on the wire, so classify() corrects it to 0. The
+    # DecisionRecord must still remember the bot's own -1, with the substitute
+    # surfaced separately in `corrected` rather than overwriting `decision`.
+    bot = NegativeBidBot()
+    result = LocalGame([bot, PassBot(), PassBot()], seed=7, record_decisions=True).play()
+
+    bids = [d for d in result.decisions if d.seat == 0 and d.kind == "submitBid"]
+    assert bids, "seat 0 was never asked to bid"
+    for record in bids:
+        assert record.decision is not None
+        assert record.decision.value == -1
+        assert record.corrected is not None
+        assert record.corrected.value == 0
+        assert record.fallback is None
+
+
+class RaisingOnErrorOverbidBot(ReportingOverbidBot):
+    async def on_error(self, error: Exception) -> None:
+        await super().on_error(error)
+        raise RuntimeError("on_error blew up")
+
+
+def test_raising_on_error_does_not_turn_a_forwarded_overbid_into_a_fallback() -> None:
+    # report_rejection is best-effort: a bot's on_error blowing up must not
+    # corrupt the sim's own bookkeeping. The engine must still receive the raw
+    # overbid (forwarded, not a fallback), and the game must still complete.
+    bot = RaisingOnErrorOverbidBot()
+    result = LocalGame([bot, PassBot(), PassBot()], seed=7, record_decisions=True).play()
+
+    bids = [d for d in result.decisions if d.seat == 0 and d.kind == "submitBid"]
+    assert bids, "seat 0 was never asked to bid"
+    assert all(d.fallback is None for d in bids)
+    assert bot.errors  # on_error was in fact called, before it raised
+    assert any(max(turn.effective_bids) > 0 for turn in result.history)
+
+
 def test_sim_reports_an_out_of_range_reveal_as_discarded() -> None:
     class BadRevealBot(ReportingOverbidBot):
         async def choose_decision(self, context: DecisionContext) -> BotDecision:

@@ -244,6 +244,14 @@ class PocketRocksRuntime:
                 context = build_decision_context(frame, received_at=queued_request.received_at)
                 decision = await self._resolve_decision(frame, context, remaining_ms)
                 applied, rejection, outgoing = classify(context, decision)
+                # Send before reporting: report_rejection awaits user-defined
+                # callbacks, and a slow or raising hook must never consume the
+                # decision deadline or suppress the response. "discarded" is the
+                # only fate with nothing sendable.
+                if applied != "discarded":
+                    await self._send_frame(
+                        decision_to_protocol_response(frame.request_id, outgoing)
+                    )
                 if rejection is not None:
                     await report_rejection(
                         self.bot,
@@ -255,13 +263,8 @@ class PocketRocksRuntime:
                         debug=self.config.debug,
                         outgoing=outgoing,
                     )
-                # "discarded" means the server has no repair path, so a frame would
-                # be a silent no-op indistinguishable from sending nothing.
                 if applied == "discarded":
                     continue
-                # `outgoing` is `decision` itself except when applied == "corrected",
-                # where it is the wire-representable substitute.
-                await self._send_frame(decision_to_protocol_response(frame.request_id, outgoing))
                 logger.debug(
                     "request %s (%s) -> %s %s",
                     frame.request_id,

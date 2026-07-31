@@ -44,6 +44,13 @@ async def report_rejection(
     at each call site) is what keeps the sim and the live runtime from having to
     duplicate that condition. Naming the outcome rather than the mechanism is
     what lets the two surfaces emit byte-identical events for the same input.
+
+    Reporting is best-effort. Both callbacks below are user-defined, and by the
+    time this runs the live runtime has already sent (or the sim has already
+    committed) the dispatch outcome — a slow or raising hook must not be able to
+    retroactively undo that. Each callback is wrapped individually and any
+    exception is logged and swallowed rather than propagated, so the reporter
+    throwing never escapes into the caller's exception handling.
     """
     details: dict[str, Any] = {
         "request_id": context.request_id,
@@ -66,5 +73,19 @@ async def report_rejection(
         f" -> {outgoing.value}" if applied == "corrected" else "",
         error,
     )
-    await bot.on_runtime_event(RuntimeEvent(kind="decisionRejected", details=details))
-    await bot.on_error(error)
+    try:
+        await bot.on_runtime_event(RuntimeEvent(kind="decisionRejected", details=details))
+    except Exception as hook_error:  # noqa: BLE001 — a bot's hook must never propagate
+        logger.warning(
+            "request %s: on_runtime_event raised while reporting a rejection: %s",
+            context.request_id,
+            hook_error,
+        )
+    try:
+        await bot.on_error(error)
+    except Exception as hook_error:  # noqa: BLE001 — a bot's hook must never propagate
+        logger.warning(
+            "request %s: on_error raised while reporting a rejection: %s",
+            context.request_id,
+            hook_error,
+        )

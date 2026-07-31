@@ -428,6 +428,84 @@ async def test_debug_off_omits_context_and_debug_on_includes_it():
     assert isinstance(_rejections(on)[0].details["context"], DecisionContext)
 
 
+async def test_on_error_raising_still_sends_forwarded_frame_and_completes():
+    # report_rejection runs after the frame is sent and must be best-effort: a
+    # bot's on_error blowing up must not turn a successfully-dispatched forwarded
+    # decision into a requestFailed / swallowed response.
+    class ErrorRaisingBot(FixedDecisionBot):
+        async def on_error(self, error: Exception) -> None:
+            await super().on_error(error)
+            raise RuntimeError("on_error blew up")
+
+    transport = FakeTransport(
+        [
+            _fixture_request_bytes(
+                request_id="55555555-5555-5555-5555-555555555555",
+                deadline_at=_now_ms(5_000),
+            )
+        ]
+    )
+    bot = ErrorRaisingBot(
+        BotDecision.submit_bid(999),
+        api_key="test-key",
+        bot_id="bot_1234",
+        server_url="ws://example.test",
+        reconnect=False,
+        transport=transport,
+    )
+    await bot.run_async()
+
+    decision_frames = [
+        f for f in decode_frames(transport.sent_messages) if f.kind == "decisionResponse"
+    ]
+    assert len(decision_frames) == 1
+    assert decision_frames[0].value == 999
+
+    kinds = [e.kind for e in bot.runtime_events]
+    assert kinds.count("requestCompleted") == 1
+    assert kinds.count("requestFailed") == 0
+    assert len(bot.errors) == 1  # on_error was in fact called, before it raised
+
+
+async def test_on_runtime_event_raising_still_calls_on_error_and_sends_frame():
+    # A raising on_runtime_event must not prevent on_error from running, and must
+    # not prevent the frame that was already sent from counting as completed.
+    class EventRaisingBot(FixedDecisionBot):
+        async def on_runtime_event(self, event: RuntimeEvent) -> None:
+            await super().on_runtime_event(event)
+            if event.kind == "decisionRejected":
+                raise RuntimeError("on_runtime_event blew up")
+
+    transport = FakeTransport(
+        [
+            _fixture_request_bytes(
+                request_id="66666666-6666-6666-6666-666666666666",
+                deadline_at=_now_ms(5_000),
+            )
+        ]
+    )
+    bot = EventRaisingBot(
+        BotDecision.submit_bid(999),
+        api_key="test-key",
+        bot_id="bot_1234",
+        server_url="ws://example.test",
+        reconnect=False,
+        transport=transport,
+    )
+    await bot.run_async()
+
+    decision_frames = [
+        f for f in decode_frames(transport.sent_messages) if f.kind == "decisionResponse"
+    ]
+    assert len(decision_frames) == 1
+    assert decision_frames[0].value == 999
+
+    assert len(bot.errors) == 1  # on_error still ran despite the earlier hook raising
+    kinds = [e.kind for e in bot.runtime_events]
+    assert kinds.count("requestCompleted") == 1
+    assert kinds.count("requestFailed") == 0
+
+
 async def test_a_raised_exception_still_reports_request_failed_and_sends_nothing():
     class ExplodingBot(RecordingBot):
         async def choose_decision(self, context: DecisionContext) -> BotDecision:

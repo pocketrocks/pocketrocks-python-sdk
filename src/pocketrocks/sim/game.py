@@ -27,6 +27,7 @@ class DecisionRecord:
     context: DecisionContext
     decision: BotDecision | None
     fallback: str | None  # None | "exception" | "illegal"
+    corrected: BotDecision | None = None  # the substitute actually dispatched, if any
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,8 @@ class LocalGame:
             self._engine, seat, kind, budget_ms=self._budget_ms, turn_index=turn_index
         )
         decision: BotDecision | None = None
+        dispatched: BotDecision | None = None
+        corrected: BotDecision | None = None
         fallback: str | None = None
         try:
             # Mirror the live runtime's dispatch: bots overriding the
@@ -119,6 +122,24 @@ class LocalGame:
             else:
                 decision = await bot.choose_decision(context)
             applied, rejection, outgoing = classify(context, decision)
+            # Commit the dispatch outcome before reporting: report_rejection awaits
+            # user-defined callbacks, and a slow or raising hook must never be able
+            # to change what the engine receives or what gets recorded.
+            # "forwarded" is not a fallback: the raw value goes to the engine,
+            # which clamps it with the same formula the server uses. Only
+            # "discarded" substitutes, matching the server recording 0 for a
+            # player whose decision never arrived.
+            if applied == "discarded":
+                fallback = "illegal"
+            else:
+                # For "corrected", `outgoing` is the wire-representable substitute;
+                # for "ok" and "forwarded" it is `decision` itself. Using it here is
+                # what makes the sim feed its engine exactly what the live runtime
+                # puts on the wire. The bot's original decision is kept separately
+                # so the record reflects what the bot actually returned.
+                dispatched = outgoing
+                if applied == "corrected":
+                    corrected = outgoing
             if rejection is not None:
                 await report_rejection(
                     bot,
@@ -130,19 +151,6 @@ class LocalGame:
                     debug=bot.config.debug,
                     outgoing=outgoing,
                 )
-            # "forwarded" is not a fallback: the raw value goes to the engine,
-            # which clamps it with the same formula the server uses. Only
-            # "discarded" substitutes, matching the server recording 0 for a
-            # player whose decision never arrived.
-            if applied == "discarded":
-                fallback = "illegal"
-            else:
-                # For "corrected", `outgoing` is the wire-representable substitute;
-                # for "ok" and "forwarded" it is `decision` itself. Using it here is
-                # what makes the sim feed its engine exactly what the live runtime
-                # puts on the wire. The bot's original value is still reported in the
-                # decisionRejected event's `value` field.
-                decision = outgoing
         except Exception:  # noqa: BLE001 — a bot bug becomes the timeout fallback
             fallback = "exception"
         if self._record:
@@ -154,9 +162,10 @@ class LocalGame:
                     context=context,
                     decision=decision,
                     fallback=fallback,
+                    corrected=corrected,
                 )
             )
-        return decision, fallback, context
+        return dispatched, fallback, context
 
     async def _ask_bid(self, seat: int, bot: PocketRocksBot, turn_index: int) -> int:
         decision, fallback, _context = await self._ask(seat, bot, "submitBid", turn_index)
