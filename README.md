@@ -364,14 +364,14 @@ sent = decode_frames(transport.sent_messages)  # inspect what your bot replied
 
 ## Bot API reference
 
-> **Full type reference:** [`TYPES.md`](TYPES.md) documents every public type
+> **Full type reference:** [`docs/TYPES.md`](docs/TYPES.md) documents every public type
 > — `PocketRocksBot`, `BotDecision`, `DecisionContext` (all fields), and
 > `RuntimeEvent`. The essentials are below.
 >
 > **Decoding the ids:** the context gives you raw action/suit/objective ids.
 > Use the `ActionId` / `Suit` / `OBJECTIVES` / `describe_*` helpers exported from
 > `pocketrocks` instead of magic numbers — full ID tables are in
-> [`MAPPINGS.md`](MAPPINGS.md).
+> [`docs/MAPPINGS.md`](docs/MAPPINGS.md).
 
 ### `choose_decision(context) -> BotDecision`
 
@@ -386,7 +386,7 @@ Called whenever the server needs a move. Return one of:
 Useful fields on `context` (`DecisionContext`): `decision_kind`
 (`"submitBid"` or `"selectInfoToReveal"`), `legal_max_amount`,
 `revealable_count`, `bot_seat`, `cash_by_seat`, `player_count`, and
-`remaining_deadline_ms`. See [`TYPES.md`](TYPES.md#decisioncontext) for every
+`remaining_deadline_ms`. See [`docs/TYPES.md`](docs/TYPES.md#decisioncontext) for every
 field with its type and meaning.
 
 ### Optional runtime hooks
@@ -458,7 +458,9 @@ You don't have to manage any of this — it's handled for you:
 ## Developing the SDK itself
 
 The rest of this section is **only** for people modifying this SDK — not for
-writing a bot (for that, use [`starter/`](starter/)).
+writing a bot (for that, use [`starter/`](starter/)). See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the contribution gate and
+[`docs/README.md`](docs/README.md) for the full documentation hub.
 
 ```bash
 git clone git@github.com:jaiparera/pocketrocks-python-sdk.git
