@@ -1,8 +1,10 @@
 # Commit-time gate. Deliberately cheap: everything here is staged-scoped or
-# near-instant. There is no pre-push hook — the `lint` job in CI runs
-# `pre-commit run --all-files`, so hooks are a convenience and CI is the
-# enforcer. A contributor who never runs `pre-commit install` cannot land
-# anything this file would have caught.
+# near-instant. There is no pre-push hook — CI re-runs `pre-commit run
+# --all-files`, so a contributor who skips `pre-commit install` still gets
+# these file-content hooks caught, with two exceptions: `conventional-pre-commit`
+# is `commit-msg`-stage and never runs in CI's `pre-commit`-stage pass (the
+# squash-merged PR title is what CI actually enforces), and `no-commit-to-branch`
+# is SKIPped in CI because a push leaves HEAD on `develop` legitimately.
 #
 # `rev` values are managed by `uv run pre-commit autoupdate`.
 default_install_hook_types: [pre-commit, commit-msg]

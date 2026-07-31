@@ -50,6 +50,9 @@ twice.
 - [ ] The PR title is a Conventional Commit — it is the message that lands.
 - [ ] No status/roadmap/debt document added. That is a GitHub issue.
 - [ ] `uv.lock` is committed alongside any `pyproject.toml` dependency change.
-- [ ] A new dependency's declared floor is the lowest version actually tested,
-      because the `floors` CI job resolves to it.
+- [ ] A new runtime dependency's declared floor is the lowest version actually
+      tested — the `floors` CI job resolves runtime deps (plus `pytest` and
+      `pytest-asyncio`) to their floors and runs `pytest`. `ruff`, `mypy`, and
+      `pre-commit` are installed at their floors too but never invoked there,
+      so an optimistic floor on those three isn't caught.
 - [ ] Examples and `starter/` still run if the API they demonstrate changed.

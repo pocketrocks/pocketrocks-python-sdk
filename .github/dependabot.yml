@@ -20,9 +20,11 @@ updates:
         patterns:
           - "*"
 
-  # Keeps .pre-commit-config.yaml hook revs from drifting away from uv.lock:
-  # ruff, for example, is pinned in both places, and only this entry keeps
-  # the pre-commit rev moving in step with the lockfile.
+  # Dependabot updates each ecosystem independently, so this doesn't keep
+  # .pre-commit-config.yaml in step with uv.lock — ruff, for example, is
+  # pinned in both places and the two can still drift apart. What this entry
+  # does buy: without it, hook revs here would never be bumped at all, while
+  # uv.lock's ruff keeps moving on its own schedule.
   - package-ecosystem: "pre-commit"
     directory: "/"
     schedule:
