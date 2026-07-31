@@ -58,5 +58,9 @@ jobs:
       - name: Install at lowest direct versions
         run: uv sync --all-extras --resolution lowest-direct --python 3.10
 
+      # --no-sync: plain `uv run` performs its own implicit sync at the
+      # default "highest" resolution first, silently re-upgrading websockets
+      # and python-dotenv back to their locked versions — so pytest would
+      # never actually run against the floors installed above.
       - name: Pytest
-        run: uv run pytest
+        run: uv run --no-sync pytest
