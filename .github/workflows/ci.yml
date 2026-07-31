@@ -92,6 +92,12 @@ jobs:
       - name: Pre-commit
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
+      - name: Docs policy
+        run: sh scripts/check-docs-policy.sh
+
+      - name: Docs policy self-test
+        run: bash scripts/check-docs-policy.test.sh
+
       - name: Lockfile is in sync with pyproject
         run: uv lock --check
 
