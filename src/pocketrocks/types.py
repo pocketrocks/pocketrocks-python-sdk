@@ -89,36 +89,15 @@ class DecisionContext:
         Legality is a pure function of the context and the decision: the response
         kind must match the request kind, a bid must be non-negative and within
         ``legal_max_amount``, and a reveal index must be within
-        ``revealable_count``. ``pass`` is always legal. The runtime calls this on
-        every returned decision; a bot can call it (or :meth:`is_legal`) itself to
-        self-check before returning.
+        ``revealable_count``. ``pass`` is always legal. A bot can call this (or
+        :meth:`is_legal`) to self-check before returning.
+
+        The runtime does **not** call this directly — it calls :func:`classify`,
+        which sorts the same rules into the ones the server repairs and the ones
+        it cannot. This method reports both, and is unchanged for callers.
         """
-        if self.decision_kind == "submitBid":
-            if decision.action_kind == "selectInfoToReveal":
-                raise InvalidBotDecision("submitBid requests cannot receive reveal responses")
-            if decision.action_kind == "submitBid":
-                if decision.value is None:
-                    raise InvalidBotDecision("submitBid responses require a value")
-                if not isinstance(decision.value, int):
-                    # A float (e.g. from an untyped model output) satisfies the
-                    # range comparisons but is not encodable as a wire varint
-                    # and not usable as an index — reject it as illegal rather
-                    # than letting it crash outside the fallback net.
-                    raise InvalidBotDecision("bid must be an integer")
-                if self.legal_max_amount is not None and decision.value > self.legal_max_amount:
-                    raise InvalidBotDecision("bid exceeds legal maximum")
-                if decision.value < 0:
-                    raise InvalidBotDecision("bid must be non-negative")
-            return
-        if decision.action_kind == "submitBid":
-            raise InvalidBotDecision("selectInfoToReveal requests cannot receive bid responses")
-        if decision.action_kind == "selectInfoToReveal":
-            if decision.value is None:
-                raise InvalidBotDecision("selectInfoToReveal responses require a card index")
-            if not isinstance(decision.value, int):
-                raise InvalidBotDecision("card index must be an integer")
-            if decision.value < 0 or decision.value >= self.revealable_count:
-                raise InvalidBotDecision("card index is out of range")
+        _check_encodable(self, decision)
+        _check_clampable(self, decision)
 
     def is_legal(self, decision: BotDecision) -> bool:
         """Whether ``decision`` is a legal response to this context. A boolean
@@ -152,3 +131,70 @@ class DecisionContext:
 class RuntimeEvent:
     kind: runtimeEventKind
     details: dict[str, Any] = field(default_factory=dict)
+
+
+def _check_encodable(context: DecisionContext, decision: BotDecision) -> None:
+    """Tier A — the server has no repair path, so a frame is worth nothing.
+
+    Either the runtime cannot build a well-formed frame at all (missing or
+    non-integer value), or the server would silently no-op on it: a mismatched
+    response kind has no handler, and ``revealInfoCard`` looks a card up by id
+    and does nothing when it is absent rather than clamping the index.
+    """
+    if context.decision_kind == "submitBid":
+        if decision.action_kind == "selectInfoToReveal":
+            raise InvalidBotDecision("submitBid requests cannot receive reveal responses")
+        if decision.action_kind == "submitBid":
+            if decision.value is None:
+                raise InvalidBotDecision("submitBid responses require a value")
+            if not isinstance(decision.value, int):
+                raise InvalidBotDecision("bid must be an integer")
+        return
+    if decision.action_kind == "submitBid":
+        raise InvalidBotDecision("selectInfoToReveal requests cannot receive bid responses")
+    if decision.action_kind == "selectInfoToReveal":
+        if decision.value is None:
+            raise InvalidBotDecision("selectInfoToReveal responses require a card index")
+        if not isinstance(decision.value, int):
+            raise InvalidBotDecision("card index must be an integer")
+        if decision.value < 0 or decision.value >= context.revealable_count:
+            raise InvalidBotDecision("card index is out of range")
+
+
+def _check_clampable(context: DecisionContext, decision: BotDecision) -> None:
+    """Tier B — the server clamps these itself, so forwarding beats swallowing.
+
+    ``rules/turns.ts::recordBid`` applies ``max(0, min(amount, legal_max))`` in
+    both the normal and loan branches, and ``SimEngine.record_bid`` mirrors it.
+    A bot that trips these still gets to participate; one whose decision is
+    swallowed does not.
+    """
+    if context.decision_kind != "submitBid" or decision.action_kind != "submitBid":
+        return
+    if not isinstance(decision.value, int):
+        return  # Tier A owns missing / non-integer values.
+    if context.legal_max_amount is not None and decision.value > context.legal_max_amount:
+        raise InvalidBotDecision("bid exceeds legal maximum")
+    if decision.value < 0:
+        raise InvalidBotDecision("bid must be non-negative")
+
+
+def classify(
+    context: DecisionContext, decision: BotDecision
+) -> tuple[str, InvalidBotDecision | None]:
+    """Sort ``decision`` into its tier, returning the decision's fate and the reason.
+
+    ``"ok"`` (legal), ``"discarded"`` (Tier A — the bot's value must not reach the
+    rules), or ``"forwarded"`` (Tier B — the value goes on regardless, and the
+    engine clamps it). Both the live runtime and the sim branch on this one
+    function, which is what keeps the two surfaces from drifting.
+    """
+    try:
+        _check_encodable(context, decision)
+    except InvalidBotDecision as error:
+        return "discarded", error
+    try:
+        _check_clampable(context, decision)
+    except InvalidBotDecision as error:
+        return "forwarded", error
+    return "ok", None

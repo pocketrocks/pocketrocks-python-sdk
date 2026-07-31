@@ -5,6 +5,7 @@ import pytest
 from pocketrocks import BotDecision, Suit
 from pocketrocks.exceptions import InvalidBotDecision
 from pocketrocks.testing import scenario
+from pocketrocks.types import classify
 
 
 def _bid_context(legal_max: int):
@@ -69,3 +70,47 @@ def test_reveal_index_out_of_range_is_rejected() -> None:
 def test_bid_response_to_a_reveal_request_is_rejected() -> None:
     with pytest.raises(InvalidBotDecision, match="cannot receive bid"):
         _reveal_context(3).validate(BotDecision.submit_bid(1))
+
+
+def test_classify_accepts_a_legal_decision() -> None:
+    applied, error = classify(_bid_context(10), BotDecision.submit_bid(5))
+    assert applied == "ok"
+    assert error is None
+
+
+def test_classify_forwards_an_overbid_because_the_server_clamps_it() -> None:
+    applied, error = classify(_bid_context(10), BotDecision.submit_bid(11))
+    assert applied == "forwarded"
+    assert error is not None
+    assert "legal maximum" in str(error)
+
+
+def test_classify_forwards_a_negative_bid() -> None:
+    applied, error = classify(_bid_context(10), BotDecision.submit_bid(-1))
+    assert applied == "forwarded"
+    assert error is not None
+    assert "non-negative" in str(error)
+
+
+def test_classify_discards_an_out_of_range_reveal_index() -> None:
+    applied, error = classify(_reveal_context(3), BotDecision.select_info_to_reveal(3))
+    assert applied == "discarded"
+    assert error is not None
+    assert "out of range" in str(error)
+
+
+def test_classify_discards_a_mismatched_response_kind() -> None:
+    applied, _error = classify(_bid_context(10), BotDecision.select_info_to_reveal(0))
+    assert applied == "discarded"
+
+
+def test_classify_discards_a_non_integer_bid() -> None:
+    applied, error = classify(_bid_context(10), BotDecision(action_kind="submitBid", value=1.5))
+    assert applied == "discarded"
+    assert error is not None
+    assert "integer" in str(error)
+
+
+def test_classify_accepts_pass_for_both_request_kinds() -> None:
+    assert classify(_bid_context(10), BotDecision.pass_turn())[0] == "ok"
+    assert classify(_reveal_context(3), BotDecision.pass_turn())[0] == "ok"
