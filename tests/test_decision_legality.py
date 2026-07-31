@@ -131,6 +131,30 @@ def test_classify_corrects_an_unencodable_large_bid() -> None:
     assert applied == "corrected"
     assert error is not None
     assert outgoing.value == max_safe_integer
+    # The reported reason must name the encodability failure. Reusing the
+    # game-rule message here would be actively misleading: the substitute still
+    # exceeds legal_max_amount and gets clamped again server-side, so "bid
+    # exceeds legal maximum" would explain neither why it was replaced nor why
+    # it was replaced with this particular value.
+    assert "encodable" in str(error)
+    assert "legal maximum" not in str(error)
+
+
+def test_an_unencodable_bid_is_corrected_even_without_a_legal_max() -> None:
+    # Encodability must not depend on a game rule firing first. If correction
+    # were decided inside the _check_clampable failure branch, a context with no
+    # legal_max_amount would classify this as "ok" and it would then blow up in
+    # the codec and be swallowed — the exact bug the corrected tier prevents.
+    from dataclasses import replace
+
+    from pocketrocks.internal.bot_wire_v2 import max_safe_integer
+
+    context = replace(_bid_context(10), legal_max_amount=None)
+    applied, error, outgoing = classify(context, BotDecision.submit_bid(max_safe_integer + 1))
+
+    assert applied == "corrected"
+    assert error is not None
+    assert outgoing.value == max_safe_integer
 
 
 def test_classify_forwards_an_encodable_overbid_unchanged() -> None:

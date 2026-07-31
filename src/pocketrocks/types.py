@@ -186,8 +186,8 @@ def _check_clampable(context: DecisionContext, decision: BotDecision) -> None:
         raise InvalidBotDecision("bid must be non-negative")
 
 
-def _wire_correction(decision: BotDecision) -> BotDecision | None:
-    """The wire-representable form of ``decision``, or None if it needs no correction.
+def _wire_correction(decision: BotDecision) -> tuple[BotDecision, str] | None:
+    """The wire-representable form of ``decision`` and why, or None if it is fine as-is.
 
     The bot wire carries unsigned varints only (``_encode_varint`` rejects
     ``value < 0`` and ``value > max_safe_integer``), so a bid outside that range
@@ -195,13 +195,27 @@ def _wire_correction(decision: BotDecision) -> BotDecision | None:
     to the wire's own bounds is the minimum change that makes the value
     expressible; it deliberately does NOT consult ``legal_max_amount``, because
     the game clamp belongs to the server (and to ``SimEngine.resolve``).
+
+    The returned reason names the *encodability* failure rather than reusing a
+    game-rule message. For the upper bound those two differ: the substitute is
+    still far above any real ``legal_max_amount`` and will be clamped again
+    server-side, so reporting "bid exceeds legal maximum" would tell a bot author
+    the wrong thing about why the value was replaced and what it was replaced with.
     """
     if decision.action_kind != "submitBid" or not isinstance(decision.value, int):
         return None
     if decision.value < 0:
-        return BotDecision.submit_bid(0)
+        return (
+            BotDecision.submit_bid(0),
+            "bid must be non-negative; the bot wire encodes unsigned integers only",
+        )
     if decision.value > max_safe_integer:
-        return BotDecision.submit_bid(max_safe_integer)
+        return (
+            BotDecision.submit_bid(max_safe_integer),
+            "bid is not encodable on the bot wire: it exceeds the largest wire "
+            f"integer ({max_safe_integer}); the substitute is still subject to the "
+            "server's own clamp",
+        )
     return None
 
 
@@ -224,11 +238,18 @@ def classify(
         _check_encodable(context, decision)
     except InvalidBotDecision as error:
         return "discarded", error, decision
+    # Encodability is a property of the wire, not of the game rules, so it is
+    # checked on its own and BEFORE the clampable rules. Deciding "corrected"
+    # inside the _check_clampable failure branch would make it contingent on a
+    # game rule happening to fire first: a context whose legal_max_amount is None
+    # would let an unencodable value through as "ok", and it would then raise in
+    # the codec and be swallowed — the exact bug this tier exists to prevent.
+    correction = _wire_correction(decision)
+    if correction is not None:
+        substitute, reason = correction
+        return "corrected", InvalidBotDecision(reason), substitute
     try:
         _check_clampable(context, decision)
     except InvalidBotDecision as error:
-        correction = _wire_correction(decision)
-        if correction is not None:
-            return "corrected", error, correction
         return "forwarded", error, decision
     return "ok", None, decision
