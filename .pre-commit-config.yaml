@@ -18,8 +18,9 @@ repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.0
     hooks:
-      # Local secret scanning is best-effort by nature; the `secret-scan` CI
-      # job re-runs it as the enforced gate, so `--no-verify` cannot bypass it.
+      # Local secret scanning is best-effort by nature; the `lint` job in CI
+      # re-runs this via `pre-commit run --all-files`, so `--no-verify`
+      # cannot bypass it.
       - id: gitleaks
 
   - repo: https://github.com/compilerla/conventional-pre-commit

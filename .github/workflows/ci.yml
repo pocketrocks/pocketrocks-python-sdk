@@ -100,7 +100,11 @@ jobs:
     steps:
       - name: Verify all jobs succeeded
         run: |
-          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+          # Check failure, cancelled, and skipped: a skipped job means its
+          # checks never ran, and for a required status check that must not
+          # read as success, or a later slice could add an `if:`-gated job
+          # that gets silently skipped and still lets this gate go green.
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
             echo "One or more required jobs failed."
             exit 1
           fi
