@@ -20,9 +20,10 @@ run_case() {
   local actual=0
   ( cd "$tmp" && sh "$GUARD" >/dev/null 2>&1 ) || actual=$?
 
-  if [ "$expected" -eq 0 ] && [ "$actual" -eq 0 ]; then
-    echo "ok   — $name"
-  elif [ "$expected" -ne 0 ] && [ "$actual" -ne 0 ]; then
+  # Assert the *specific* expected exit status, not just zero-vs-nonzero, so
+  # a crashing/missing guard (exit 127, or a shell syntax error) fails the
+  # suite loudly instead of being mistaken for a correct rejection.
+  if [ "$actual" -eq "$expected" ]; then
     echo "ok   — $name"
   else
     echo "FAIL — $name (expected exit $expected, got $actual)"
@@ -41,6 +42,13 @@ run_case "tech debt rejected"                          1 "docs/TECH_DEBT.md"
 run_case "status doc rejected"                         1 "STATUS.md"
 run_case "uncanonical docs/ file rejected"             1 "docs/RANDOM_NOTES.md"
 run_case "nested dir under docs rejected"              1 "docs/design/thing.md"
+
+# Regression tests — findings 1, 2, 3.
+run_case "compound status name outside docs/ rejected" 1 "src/pocketrocks/NOTES_STATUS.md"
+run_case "compound status name at root rejected"       1 "SIM_STATUS.md"
+run_case "non-markdown file in docs/ rejected"         1 "docs/notes.txt"
+run_case "docs/README.md.bak rejected"                 1 "docs/README.md.bak"
+run_case "flat ADR with spaces in filename accepted"   0 "docs/adr/2026-07-31 example decision.md"
 
 if [ "$FAILURES" -ne 0 ]; then
   echo "$FAILURES test(s) failed."
