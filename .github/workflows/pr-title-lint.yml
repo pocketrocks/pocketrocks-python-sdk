@@ -17,6 +17,7 @@ jobs:
   title:
     name: PR title is a Conventional Commit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       # Implemented inline rather than with a third-party action: the whole
       # check is one regex, and a marketplace action here would be a supply

@@ -73,6 +73,12 @@ This repo uses [Conventional Commits](https://www.conventionalcommits.org/).
 Because PRs are **squash-merged**, the **PR title** is what lands on `develop` —
 a CI check blocks non-conforming titles.
 
+Commit messages themselves are validated only by the local
+`conventional-pre-commit` hook, not by CI — `pre-commit run --all-files` runs
+`pre-commit`-stage hooks only, and that hook runs at `commit-msg` stage. This
+is fine in practice: squash-merge means the PR title is what actually lands
+on `develop`, and the PR title *is* the one CI enforces.
+
 Allowed types: `feat`, `fix`, `chore`, `docs`, `refactor`, `perf`, `test`,
 `build`, `ci`, `revert`, `style`. Scope optional.
 
@@ -81,6 +87,17 @@ feat(sim): add deterministic replay seeds
 fix: guard against a missing legal_max_amount
 docs(readme): document POCKETROCKS_SKIP_VERSION_CHECK
 ```
+
+### Branch protection
+
+CI enforces nothing unless branch protection on `develop` actually requires
+it. Two separate checks must both be marked required, because they come from
+two separate workflows and neither can see the other:
+
+- `CI OK`
+- `PR title is a Conventional Commit`
+
+Without both set, every gate described in this document is advisory only.
 
 ## Branches
 
@@ -117,8 +134,11 @@ uv lock
 ```
 
 Commit the updated `uv.lock`. Declare the **lowest version you actually support**
-— the `floors` CI job resolves to your declared minimums and runs the suite
-against them, so an optimistic floor fails the build.
+— the `floors` CI job resolves runtime dependencies to your declared minimums
+and runs `pytest` against them, so an optimistic floor on a runtime dependency,
+`pytest`, or `pytest-asyncio` fails the build. `ruff`, `mypy`, and `pre-commit`
+are installed at their floors too but never invoked in that job, so an
+optimistic floor on those three would not be caught here.
 
 ## Review
 

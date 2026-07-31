@@ -17,10 +17,14 @@ concurrency:
   group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Lint, type-check, test (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -37,9 +41,9 @@ jobs:
       - name: Install
         run: uv sync --locked --all-extras --python ${{ matrix.python-version }}
 
-      - name: Ruff
-        run: uv run ruff check .
-
+      # Ruff is deliberately not run here: its results don't vary across the
+      # Python matrix, and the `lint` job's pre-commit run already covers it
+      # — a second copy in each matrix leg would just be four redundant runs.
       - name: Mypy
         run: uv run mypy src tests
 
@@ -49,6 +53,7 @@ jobs:
   floors:
     name: Dependency floors (lowest-direct)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,6 +79,7 @@ jobs:
   lint:
     name: Lint and format
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -89,7 +95,15 @@ jobs:
       # Runs ruff-format, ruff, gitleaks and the hygiene hooks in one pass.
       # Deliberately not duplicated as separate ruff steps: .pre-commit-config.yaml
       # is the single definition of the gate, and a second copy here would drift.
+      #
+      # SKIP no-commit-to-branch: that hook guards *local* commits made
+      # directly to `develop`. On a `push` event, actions/checkout leaves
+      # HEAD on `develop` itself (unlike `pull_request`, which checks out a
+      # detached merge ref), so the hook would fail on every post-merge run
+      # for a reason that has nothing to do with the commit's content.
       - name: Pre-commit
+        env:
+          SKIP: no-commit-to-branch
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
       - name: Docs policy
@@ -102,11 +116,17 @@ jobs:
         run: uv lock --check
 
   ci-ok:
-    # Single required status check. Every job above is a dependency, so adding
-    # a job to this workflow without adding it here silently removes it from
-    # the merge bar — check this list when adding jobs in later slices.
+    # Single required status check *for this workflow*. It cannot cover the
+    # PR-title check in pr-title-lint.yml — that's a separate workflow, so it
+    # structurally cannot appear in this job's `needs:`. Branch protection on
+    # `develop` must require both "CI OK" and "PR title is a Conventional
+    # Commit"; see the Branch protection section in CONTRIBUTING.md. Every job
+    # above is a dependency, so adding a job to this workflow without adding
+    # it here silently removes it from the merge bar — check this list when
+    # adding jobs in later slices.
     name: CI OK
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [lint, check, floors]
     if: always()
     steps:
