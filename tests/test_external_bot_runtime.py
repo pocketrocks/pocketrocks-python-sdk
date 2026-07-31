@@ -322,3 +322,132 @@ async def test_runtime_contains_callback_errors_and_keeps_processing():
     assert [frame.kind for frame in sent_frames] == ["decisionResponse"]
     assert sent_frames[0].action_kind == "pass"
     assert len(bot.errors) == 1
+
+
+class FixedDecisionBot(RecordingBot):
+    """Returns one scripted decision regardless of context."""
+
+    def __init__(self, decision: BotDecision, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._decision = decision
+
+    async def choose_decision(self, context: DecisionContext) -> BotDecision:
+        self.contexts.append(context)
+        return self._decision
+
+
+async def _run_with_decision(decision: BotDecision, *, debug: bool = False):
+    transport = FakeTransport(
+        [
+            _fixture_request_bytes(
+                request_id="33333333-3333-3333-3333-333333333333",
+                deadline_at=_now_ms(5_000),
+            )
+        ]
+    )
+    bot = FixedDecisionBot(
+        decision,
+        api_key="test-key",
+        bot_id="bot_1234",
+        server_url="ws://example.test",
+        reconnect=False,
+        debug=debug,
+        transport=transport,
+    )
+    await bot.run_async()
+    return bot, decode_frames(transport.sent_messages)
+
+
+def _rejections(bot: RecordingBot) -> list[RuntimeEvent]:
+    return [e for e in bot.runtime_events if e.kind == "decisionRejected"]
+
+
+async def test_overbid_is_forwarded_to_the_server_which_clamps_it():
+    # legal_max is 20 in the fixture; the server clamps, so swallowing would be worse.
+    bot, sent = await _run_with_decision(BotDecision.submit_bid(999))
+
+    decision_frames = [f for f in sent if f.kind == "decisionResponse"]
+    assert len(decision_frames) == 1
+    assert decision_frames[0].value == 999  # raw value, unclamped by the SDK
+
+    events = _rejections(bot)
+    assert len(events) == 1
+    assert events[0].details["applied"] == "forwarded"
+    assert events[0].details["action_kind"] == "submitBid"
+    assert events[0].details["value"] == 999
+    assert "legal maximum" in events[0].details["detail"]
+    assert len(bot.errors) == 1
+
+
+async def test_negative_bid_is_corrected_to_zero_and_sent():
+    # The wire cannot carry a negative varint, so -5 is coerced to 0 and sent.
+    # 0 is the same bid the server would have computed, and sending it also sets
+    # submitted=true so the auction resolves without waiting out the bid window.
+    bot, sent = await _run_with_decision(BotDecision.submit_bid(-5))
+
+    assert [f.value for f in sent if f.kind == "decisionResponse"] == [0]
+    details = _rejections(bot)[0].details
+    assert details["applied"] == "corrected"
+    assert details["value"] == -5           # what the bot returned
+    assert details["corrected_value"] == 0  # what actually went on the wire
+
+
+async def test_mismatched_response_kind_is_discarded():
+    bot, sent = await _run_with_decision(BotDecision.select_info_to_reveal(0))
+
+    assert [f for f in sent if f.kind == "decisionResponse"] == []
+    events = _rejections(bot)
+    assert len(events) == 1
+    assert events[0].details["applied"] == "discarded"
+    assert len(bot.errors) == 1
+    assert [e.kind for e in bot.runtime_events].count("requestCompleted") == 0
+
+
+async def test_rejection_does_not_emit_request_failed():
+    # requestFailed must regain its real meaning: something threw.
+    bot, _sent = await _run_with_decision(BotDecision.select_info_to_reveal(0))
+    assert [e.kind for e in bot.runtime_events].count("requestFailed") == 0
+
+
+async def test_legal_decision_emits_no_rejection():
+    bot, sent = await _run_with_decision(BotDecision.submit_bid(20))
+
+    assert [f.value for f in sent if f.kind == "decisionResponse"] == [20]
+    assert _rejections(bot) == []
+    assert [e.kind for e in bot.runtime_events].count("requestCompleted") == 1
+
+
+async def test_debug_off_omits_context_and_debug_on_includes_it():
+    off, _ = await _run_with_decision(BotDecision.submit_bid(999), debug=False)
+    assert "context" not in _rejections(off)[0].details
+
+    on, _ = await _run_with_decision(BotDecision.submit_bid(999), debug=True)
+    assert isinstance(_rejections(on)[0].details["context"], DecisionContext)
+
+
+async def test_a_raised_exception_still_reports_request_failed_and_sends_nothing():
+    class ExplodingBot(RecordingBot):
+        async def choose_decision(self, context: DecisionContext) -> BotDecision:
+            raise RuntimeError("bot blew up")
+
+    transport = FakeTransport(
+        [
+            _fixture_request_bytes(
+                request_id="44444444-4444-4444-4444-444444444444",
+                deadline_at=_now_ms(5_000),
+            )
+        ]
+    )
+    bot = ExplodingBot(
+        api_key="test-key",
+        bot_id="bot_1234",
+        server_url="ws://example.test",
+        reconnect=False,
+        transport=transport,
+    )
+    await bot.run_async()
+
+    kinds = [e.kind for e in bot.runtime_events]
+    assert kinds.count("requestFailed") == 1
+    assert kinds.count("decisionRejected") == 0
+    assert [f for f in decode_frames(transport.sent_messages) if f.kind == "decisionResponse"] == []

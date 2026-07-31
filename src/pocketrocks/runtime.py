@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from pocketrocks._reporting import report_rejection
 from pocketrocks.config import BotConfig
 from pocketrocks.constants import fatal_connect_status_codes
 from pocketrocks.exceptions import (
@@ -28,7 +29,7 @@ from pocketrocks.protocol import (
 )
 from pocketrocks.reconnect import ReconnectOutcome, ReconnectPolicy
 from pocketrocks.transport import WebSocketTransport
-from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
+from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent, classify
 
 logger = logging.getLogger("pocketrocks.runtime")
 
@@ -242,8 +243,25 @@ class PocketRocksRuntime:
             try:
                 context = build_decision_context(frame, received_at=queued_request.received_at)
                 decision = await self._resolve_decision(frame, context, remaining_ms)
-                context.validate(decision)
-                await self._send_frame(decision_to_protocol_response(frame.request_id, decision))
+                applied, rejection, outgoing = classify(context, decision)
+                if rejection is not None:
+                    await report_rejection(
+                        self.bot,
+                        logger,
+                        context=context,
+                        decision=decision,
+                        error=rejection,
+                        applied=applied,
+                        debug=self.config.debug,
+                        corrected=outgoing if applied == "corrected" else None,
+                    )
+                # "discarded" means the server has no repair path, so a frame would
+                # be a silent no-op indistinguishable from sending nothing.
+                if applied == "discarded":
+                    continue
+                # `outgoing` is `decision` itself except when applied == "corrected",
+                # where it is the wire-representable substitute.
+                await self._send_frame(decision_to_protocol_response(frame.request_id, outgoing))
                 logger.debug(
                     "request %s (%s) -> %s %s",
                     frame.request_id,
