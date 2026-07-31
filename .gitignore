@@ -30,3 +30,8 @@ venv/
 
 # Controller scratch for subagent-driven execution (progress ledger, briefs).
 .superpowers/
+
+# Local agent task tracking. Canonical issues live in GitHub — see the docs
+# policy in docs/README.md. Ignored here rather than relying on a contributor's
+# global gitignore.
+.beads/

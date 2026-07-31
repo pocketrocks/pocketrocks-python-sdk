@@ -458,17 +458,15 @@ You don't have to manage any of this — it's handled for you:
 ## Developing the SDK itself
 
 The rest of this section is **only** for people modifying this SDK — not for
-writing a bot (for that, use [`starter/`](starter/)). See
-[`CONTRIBUTING.md`](CONTRIBUTING.md) for the contribution gate and
-[`docs/README.md`](docs/README.md) for the full documentation hub.
+writing a bot (for that, use [`starter/`](starter/)). `uv` is the toolchain
+entry point for setup, tests, and linting — see
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contribution gate and
+[`docs/README.md`](docs/README.md) for the documentation hub.
 
 ```bash
 git clone git@github.com:jaiparera/pocketrocks-python-sdk.git
 cd pocketrocks-python-sdk
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"     # editable install with dev tools
-pytest                       # run the test suite
-ruff check . && mypy src     # lint + type-check
+uv sync --all-extras
 ```
 
 ### Vendored protocol package

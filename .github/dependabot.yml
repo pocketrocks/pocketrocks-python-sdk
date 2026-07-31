@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Python deps. Fully enabled — unlike the pocketrocks monorepo, there is no
+  # release freeze here and CI minutes are not a constraint.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
