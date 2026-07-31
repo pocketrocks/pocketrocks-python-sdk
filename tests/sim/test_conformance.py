@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -12,7 +13,7 @@ _TRACES = sorted((Path(__file__).parent.parent / "fixtures" / "botsdk" / "traces
 
 
 def _load(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text())
+    return cast("dict[str, object]", json.loads(path.read_text()))
 
 
 def test_fixtures_exist() -> None:

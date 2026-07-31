@@ -5,9 +5,10 @@ import pytest
 from pocketrocks import BotDecision, Suit
 from pocketrocks.exceptions import InvalidBotDecision
 from pocketrocks.testing import scenario
+from pocketrocks.types import DecisionContext
 
 
-def _bid_context(legal_max: int):
+def _bid_context(legal_max: int) -> DecisionContext:
     # A submitBid context whose legal max is the winner's remaining cash.
     return (
         scenario(players=2, starting_cash=legal_max)
@@ -16,7 +17,7 @@ def _bid_context(legal_max: int):
     )
 
 
-def _reveal_context(revealable: int):
+def _reveal_context(revealable: int) -> DecisionContext:
     hand = [Suit.BRICK] * revealable
     return (
         scenario(players=2, starting_cash=0)

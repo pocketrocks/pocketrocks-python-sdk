@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import threading
 import warnings
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any
 
 import pytest
 
 import pocketrocks._update_check as update_check
 from pocketrocks._update_check import StaleSDKWarning
+from pocketrocks._version import RULES_VERSION, __version__
 
 REMOTE_NEWER = b'__version__ = "9.9.9"\nRULES_VERSION = 99\n'
-REMOTE_SAME = (
-    f'__version__ = "{update_check.__version__}"\nRULES_VERSION = {update_check.RULES_VERSION}\n'
-).encode()
+REMOTE_SAME = (f'__version__ = "{__version__}"\nRULES_VERSION = {RULES_VERSION}\n').encode()
 
 
 @pytest.fixture(autouse=True)
@@ -21,7 +22,7 @@ def _reset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("POCKETROCKS_SKIP_VERSION_CHECK", raising=False)
 
 
-def _fake_fetch(payload: bytes | Exception):
+def _fake_fetch(payload: bytes | Exception) -> Callable[[str, float], bytes]:
     def fetch(url: str, timeout: float) -> bytes:
         if isinstance(payload, Exception):
             raise payload
@@ -64,9 +65,12 @@ def test_silent_on_network_failure(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_runs_once_per_process(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
-    monkeypatch.setattr(
-        update_check, "_fetch", lambda url, timeout: calls.append(url) or REMOTE_SAME
-    )
+
+    def fetch(url: str, timeout: float) -> bytes:
+        calls.append(url)
+        return REMOTE_SAME
+
+    monkeypatch.setattr(update_check, "_fetch", fetch)
     update_check.maybe_warn_if_stale()
     update_check.maybe_warn_if_stale()
     assert len(calls) == 1
@@ -75,9 +79,12 @@ def test_runs_once_per_process(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_env_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     monkeypatch.setenv("POCKETROCKS_SKIP_VERSION_CHECK", "1")
-    monkeypatch.setattr(
-        update_check, "_fetch", lambda url, timeout: calls.append(url) or REMOTE_NEWER
-    )
+
+    def fetch(url: str, timeout: float) -> bytes:
+        calls.append(url)
+        return REMOTE_NEWER
+
+    monkeypatch.setattr(update_check, "_fetch", fetch)
     update_check.maybe_warn_if_stale()
     assert not calls
 
@@ -85,7 +92,12 @@ def test_env_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_kickoff_spawns_no_thread_when_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     monkeypatch.setenv("POCKETROCKS_SKIP_VERSION_CHECK", "1")
-    monkeypatch.setattr(update_check, "_fetch", lambda url, timeout: calls.append(url) or b"")
+
+    def fetch(url: str, timeout: float) -> bytes:
+        calls.append(url)
+        return b""
+
+    monkeypatch.setattr(update_check, "_fetch", fetch)
     update_check.kickoff_update_check()
     assert not calls
 
@@ -103,16 +115,27 @@ def test_kickoff_runs_check_in_background(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_kickoff_noop_after_check_ran(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(update_check, "_fetch", lambda url, timeout: REMOTE_SAME)
+    def fetch(url: str, timeout: float) -> bytes:
+        return REMOTE_SAME
+
+    monkeypatch.setattr(update_check, "_fetch", fetch)
     update_check.maybe_warn_if_stale()  # sets _checked
     started: list[str] = []
     real_thread = threading.Thread
 
-    def spy_thread(*args: object, **kwargs: object) -> threading.Thread:
+    def spy_thread(
+        group: None = None,
+        target: Callable[..., object] | None = None,
+        name: str | None = None,
+        args: Iterable[Any] = (),
+        kwargs: Mapping[str, Any] | None = None,
+        *,
+        daemon: bool | None = None,
+    ) -> threading.Thread:
         started.append("spawned")
-        return real_thread(*args, **kwargs)  # type: ignore[arg-type]
+        return real_thread(group, target, name, args, kwargs, daemon=daemon)
 
-    monkeypatch.setattr(update_check.threading, "Thread", spy_thread)
+    monkeypatch.setattr("pocketrocks._update_check.threading.Thread", spy_thread)
     update_check.kickoff_update_check()
     assert not started  # no thread churn once the once-per-process check ran
 
@@ -131,11 +154,19 @@ def test_kickoff_reserves_before_spawning(monkeypatch: pytest.MonkeyPatch) -> No
     started: list[str] = []
     real_thread = threading.Thread
 
-    def spy_thread(*args: object, **kwargs: object) -> threading.Thread:
+    def spy_thread(
+        group: None = None,
+        target: Callable[..., object] | None = None,
+        name: str | None = None,
+        args: Iterable[Any] = (),
+        kwargs: Mapping[str, Any] | None = None,
+        *,
+        daemon: bool | None = None,
+    ) -> threading.Thread:
         started.append("spawned")
-        return real_thread(*args, **kwargs)  # type: ignore[arg-type]
+        return real_thread(group, target, name, args, kwargs, daemon=daemon)
 
-    monkeypatch.setattr(update_check.threading, "Thread", spy_thread)
+    monkeypatch.setattr("pocketrocks._update_check.threading.Thread", spy_thread)
     update_check.kickoff_update_check()
     update_check.kickoff_update_check()  # worker still parked; must not respawn
     release.set()
@@ -154,8 +185,12 @@ def test_atexit_join_is_bounded_and_lets_check_finish(
         return REMOTE_SAME
 
     registered: list[object] = []
+
+    def register(fn: object) -> None:
+        registered.append(fn)
+
     monkeypatch.setattr(update_check, "_fetch", slow_fetch)
-    monkeypatch.setattr(update_check.atexit, "register", lambda fn: registered.append(fn))
+    monkeypatch.setattr("pocketrocks._update_check.atexit.register", register)
     update_check.kickoff_update_check()
     assert registered == [update_check._join_worker]
     release.set()

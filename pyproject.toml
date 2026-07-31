@@ -93,3 +93,10 @@ python_version = "3.10"
 mypy_path = "src"
 strict = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+# Tests are type-checked, but two strict-mode rules fight the pytest idiom
+# rather than catching defects: fixtures and parametrised cases are routinely
+# untyped by convention, and decorators from pytest are themselves untyped.
+module = "tests.*"
+disallow_untyped_decorators = false

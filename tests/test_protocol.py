@@ -4,6 +4,7 @@ from dataclasses import fields
 
 from pocketrocks import ActionId, DecisionContext, Suit
 from pocketrocks.internal.bot_wire_v2 import (
+    DecisionRequest,
     ReconstructedDecisionContext,
     decode_frame,
     reconstruct_decision_context,
@@ -30,6 +31,7 @@ def test_build_decision_context_copies_every_shared_field_verbatim() -> None:
         .deciding(seat=0, hand=[Suit.BRICK, Suit.ORE], kind="submitBid")
         .to_bytes()
     )
+    assert isinstance(request, DecisionRequest)
     reconstructed = reconstruct_decision_context(request)
     context = build_decision_context(request, received_at=0)
 

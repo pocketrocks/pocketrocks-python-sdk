@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pocketrocks.internal.bot_wire_v2 import GameSetupEvent
 from pocketrocks.sim.constants import (
@@ -18,7 +18,7 @@ _FIXTURES = Path(__file__).parent.parent / "fixtures" / "botsdk"
 
 
 def _trace(name: str) -> dict[str, Any]:
-    return json.loads((_FIXTURES / "traces" / f"{name}.json").read_text())
+    return cast("dict[str, Any]", json.loads((_FIXTURES / "traces" / f"{name}.json").read_text()))
 
 
 def test_action_deck_composition() -> None:
