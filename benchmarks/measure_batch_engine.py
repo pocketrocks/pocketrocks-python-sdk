@@ -90,7 +90,9 @@ def run_isolated(args: argparse.Namespace, batch_size: int) -> dict[str, Any]:
         "--seed-offset",
         str(args.seed_offset),
     ]
-    completed = subprocess.run(
+    # Re-invokes this same script (sys.executable + our own path) with argparse
+    # `type=int` values only; no shell, no untrusted/string input.
+    completed = subprocess.run(  # noqa: S603
         command,
         check=True,
         capture_output=True,

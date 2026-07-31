@@ -129,14 +129,13 @@ class BatchSimEngine:
 
         cards_per_player = INFO_CARDS_PER_PLAYER[player_count]
         dealt_count = player_count * cards_per_player
-        self.hand_cards: NDArray[np.uint8] = self.item_decks[
-            :, :dealt_count
-        ].reshape(self.batch_size, player_count, cards_per_player).copy()
+        self.hand_cards: NDArray[np.uint8] = (
+            self.item_decks[:, :dealt_count]
+            .reshape(self.batch_size, player_count, cards_per_player)
+            .copy()
+        )
         self.initial_info_counts: NDArray[np.uint8] = np.stack(
-            [
-                np.count_nonzero(self.hand_cards == suit_id, axis=(1, 2))
-                for suit_id in range(1, 6)
-            ],
+            [np.count_nonzero(self.hand_cards == suit_id, axis=(1, 2)) for suit_id in range(1, 6)],
             axis=1,
         ).astype(np.uint8, copy=False)
         self.resource_decks: NDArray[np.uint8] = self.item_decks[:, dealt_count:].copy()
@@ -230,9 +229,7 @@ class BatchSimEngine:
         if unknown_charts:
             raise ValueError(f"unknown value charts: {unknown_charts!r}")
         objective_flags = (
-            (True,) * batch_size
-            if objectives_enabled is None
-            else tuple(objectives_enabled)
+            (True,) * batch_size if objectives_enabled is None else tuple(objectives_enabled)
         )
         if len(objective_flags) != batch_size:
             raise ValueError("objectives_enabled length must match seeds")
@@ -276,8 +273,7 @@ class BatchSimEngine:
     def resolve_bids(self, bids: NDArray[np.integer]) -> BatchTurnOutcome:
         if bids.shape != (self.batch_size, self.player_count):
             raise ValueError(
-                f"bids shape must be {(self.batch_size, self.player_count)}, "
-                f"got {bids.shape}"
+                f"bids shape must be {(self.batch_size, self.player_count)}, got {bids.shape}"
             )
         if not np.issubdtype(bids.dtype, np.integer):
             raise ValueError("bids must use an integer dtype")
@@ -314,9 +310,7 @@ class BatchSimEngine:
             invest_rows = active & (actions == action_id)
             invest_indices = rows[invest_rows]
             invest_winners = winners[invest_rows].astype(np.intp, copy=False)
-            self.investment_values[invest_indices, invest_winners] += (
-                paid[invest_rows] + payout
-            )
+            self.investment_values[invest_indices, invest_winners] += paid[invest_rows] + payout
 
         auction_rows = active & np.isin(actions, (_AUCTION_1_ID, _AUCTION_2_ID))
         grant_counts = np.zeros(self.batch_size, dtype=np.uint8)
@@ -433,9 +427,7 @@ class BatchSimEngine:
         )
         selected_hands = self.hand_cards[reveal_rows, reveal_seats]
         positions = np.arange(self.hand_cards.shape[2])
-        sources = positions[None, :] + (
-            positions[None, :] >= reveal_indices[:, None]
-        )
+        sources = positions[None, :] + (positions[None, :] >= reveal_indices[:, None])
         sources = np.minimum(sources, self.hand_cards.shape[2] - 1)
         compacted = np.take_along_axis(selected_hands, sources, axis=1)
         compacted[:, -1] = 0
@@ -468,11 +460,7 @@ class BatchSimEngine:
             dtype=np.int16,
         )
         total = (
-            self.cash
-            + items
-            + objectives
-            + self.investment_values
-            - self.loan_principal
+            self.cash + items + objectives + self.investment_values - self.loan_principal
         ).astype(np.int16, copy=False)
         return BatchScores(
             cash=self.cash.copy(),

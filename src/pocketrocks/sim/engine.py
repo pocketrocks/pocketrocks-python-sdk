@@ -50,9 +50,11 @@ class SimEngine:
         objectives_enabled: bool = True,
         player_names: Sequence[str] | None = None,
     ) -> None:
-        names = list(player_names) if player_names is not None else [
-            f"Bot {seat}" for seat in range(player_count)
-        ]
+        names = (
+            list(player_names)
+            if player_names is not None
+            else [f"Bot {seat}" for seat in range(player_count)]
+        )
         if len(names) != player_count:
             raise ValueError("player_names length must match player_count")
         self._batch = BatchSimEngine.start(
@@ -68,17 +70,13 @@ class SimEngine:
         self.debug_action_deck_order = tuple(
             _ACTION_BY_WIRE_ID[int(action)] for action in self._batch.action_decks[0]
         )
-        self.initial_info_counts = tuple(
-            int(count) for count in self._batch.initial_info_counts[0]
-        )
+        self.initial_info_counts = tuple(int(count) for count in self._batch.initial_info_counts[0])
         self.players = [
             PlayerSim(
                 seat=seat,
                 name=names[seat],
                 cash=int(self._batch.cash[0, seat]),
-                hand_suits=[
-                    int(card) for card in self._batch.hand_cards[0, seat] if card > 0
-                ],
+                hand_suits=[int(card) for card in self._batch.hand_cards[0, seat] if card > 0],
             )
             for seat in range(player_count)
         ]
@@ -123,9 +121,7 @@ class SimEngine:
             batch.hand_cards[0, seat, : len(player.hand_suits)] = player.hand_suits
             for suit_id in range(1, 6):
                 batch.won_counts[0, seat, suit_id - 1] = player.won_suits.count(suit_id)
-                batch.revealed_counts[0, seat, suit_id - 1] = player.revealed_suits.count(
-                    suit_id
-                )
+                batch.revealed_counts[0, seat, suit_id - 1] = player.revealed_suits.count(suit_id)
             batch.loan_principal[0, seat] = sum(player.loans)
             batch.investment_values[0, seat] = sum(
                 locked + payout for locked, payout in player.investments
@@ -163,16 +159,13 @@ class SimEngine:
         batch = self._batch
         for seat, player in enumerate(self.players):
             player.cash = int(batch.cash[0, seat])
-            player.hand_suits[:] = [
-                int(card) for card in batch.hand_cards[0, seat] if card > 0
-            ]
+            player.hand_suits[:] = [int(card) for card in batch.hand_cards[0, seat] if card > 0]
         self.tiebreak_seat = int(batch.tiebreak_seats[0])
         self.upcoming[:] = [int(card) for card in batch.upcoming[0] if card > 0]
         resource_position = int(batch.resource_positions[0])
         resource_limit = int(batch.resource_limits[0])
         self.pile[:] = [
-            int(card)
-            for card in batch.resource_decks[0, resource_position:resource_limit]
+            int(card) for card in batch.resource_decks[0, resource_position:resource_limit]
         ]
         action_position = int(batch.action_positions[0])
         action_limit = int(batch.action_limits[0])
@@ -235,9 +228,7 @@ class SimEngine:
             if claimant is not None
         }
         self._sync_to_batch()
-        result = self._batch.resolve_bids(
-            np.asarray([raw_bids], dtype=np.int64)
-        )
+        result = self._batch.resolve_bids(np.asarray([raw_bids], dtype=np.int64))
         winner = int(result.winner_seats[0])
         paid = int(result.paid[0])
         effective = tuple(int(value) for value in result.effective_bids[0])
@@ -255,9 +246,7 @@ class SimEngine:
         bundle = upcoming_before[:grants]
         self.players[winner].won_suits.extend(bundle)
         self.players[winner].objective_wire_ids.extend(claimed)
-        self.events.append(
-            AuctionResolvedEvent(kind="auctionResolved", bids_by_seat=effective)
-        )
+        self.events.append(AuctionResolvedEvent(kind="auctionResolved", bids_by_seat=effective))
         mode = int(result.reveal_modes[0])
         reveal_needed = {0: None, 1: "auto", 2: "choice"}[mode]
         self.history.append(
@@ -309,29 +298,24 @@ class SimEngine:
         rows: list[ScoreRow] = []
         for player in self.players:
             objective_value = sum(
-                OBJECTIVE_PAYOUTS[objective_id]
-                for objective_id in player.objective_wire_ids
+                OBJECTIVE_PAYOUTS[objective_id] for objective_id in player.objective_wire_ids
             )
             items_value = int(scores.items[0, player.seat])
             investments_value = int(scores.investments[0, player.seat])
             loans_value = int(scores.loans[0, player.seat])
             cash = int(scores.cash[0, player.seat])
-            rows.append(ScoreRow(
-                seat=player.seat,
-                name=player.name,
-                cash=cash,
-                items_value=items_value,
-                objectives_value=objective_value,
-                investments_value=investments_value,
-                loans_value=loans_value,
-                total=(
-                    cash
-                    + items_value
-                    + objective_value
-                    + investments_value
-                    - loans_value
-                ),
-            ))
+            rows.append(
+                ScoreRow(
+                    seat=player.seat,
+                    name=player.name,
+                    cash=cash,
+                    items_value=items_value,
+                    objectives_value=objective_value,
+                    investments_value=investments_value,
+                    loans_value=loans_value,
+                    total=(cash + items_value + objective_value + investments_value - loans_value),
+                )
+            )
         return rows
 
     def ranking(self) -> list[int]:

@@ -18,7 +18,7 @@ def _with_jitter(delay_seconds: float) -> float:
     """Apply +/- ``reconnect_jitter_fraction`` jitter so bots do not reconnect
     in lockstep. Centered on ``delay_seconds`` to preserve the average cadence."""
     spread = delay_seconds * reconnect_jitter_fraction
-    return delay_seconds + random.uniform(-spread, spread)
+    return delay_seconds + random.uniform(-spread, spread)  # noqa: S311 -- timing jitter, not security-sensitive
 
 
 class ReconnectPolicy:

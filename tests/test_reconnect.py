@@ -121,9 +121,7 @@ async def test_run_feeds_rejected_for_403_and_transient_for_network_error() -> N
         [TransportRejected(403, "inactive"), TransportError("connection refused")]
     )
     policy = _RecordingPolicy()
-    runtime = PocketRocksRuntime(
-        bot=bot, config=bot.config, transport=transport, policy=policy
-    )
+    runtime = PocketRocksRuntime(bot=bot, config=bot.config, transport=transport, policy=policy)
 
     task = asyncio.create_task(runtime.run())
     for _ in range(200):

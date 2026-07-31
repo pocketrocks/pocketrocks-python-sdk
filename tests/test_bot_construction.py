@@ -37,5 +37,6 @@ def test_run_async_still_requires_credentials(
 
 
 def test_version_constants() -> None:
-    assert isinstance(__version__, str) and __version__.count(".") == 2
+    assert isinstance(__version__, str)
+    assert __version__.count(".") == 2
     assert isinstance(RULES_VERSION, int)

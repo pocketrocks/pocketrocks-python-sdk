@@ -23,7 +23,7 @@ class RandomBot(PocketRocksBot):
 
     def __init__(self, seed: int = 0) -> None:
         super().__init__()
-        self._rng = random.Random(seed)
+        self._rng = random.Random(seed)  # noqa: S311 -- reproducible sim RNG, not security-sensitive
 
     async def choose_decision(self, context: DecisionContext) -> BotDecision:
         if context.decision_kind == "submitBid":

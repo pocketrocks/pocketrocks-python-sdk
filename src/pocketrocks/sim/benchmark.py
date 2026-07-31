@@ -168,8 +168,12 @@ def run_games(
     if workers <= 1:
         for i in range(n_games):
             result = _play_one_game(
-                providers, seed_list[i], rotations[i], value_chart,
-                record_decisions, decision_budget_ms
+                providers,
+                seed_list[i],
+                rotations[i],
+                value_chart,
+                record_decisions,
+                decision_budget_ms,
             )
             _aggregate(i, result)
     else:
@@ -177,8 +181,12 @@ def run_games(
 
             def _submit(game_index: int) -> Future[GameResult]:
                 return pool.submit(
-                    _play_one_game, list(providers), seed_list[game_index],
-                    rotations[game_index], value_chart, record_decisions,
+                    _play_one_game,
+                    list(providers),
+                    seed_list[game_index],
+                    rotations[game_index],
+                    value_chart,
+                    record_decisions,
                     decision_budget_ms,
                 )
 

@@ -36,8 +36,7 @@ def test_deterministic_game() -> None:
 
 
 def test_crash_and_illegal_fall_back_like_a_timeout() -> None:
-    result = LocalGame([CrashBot(), IllegalBot(), PassBot()], seed=7,
-                       record_decisions=True).play()
+    result = LocalGame([CrashBot(), IllegalBot(), PassBot()], seed=7, record_decisions=True).play()
     fallbacks = {d.fallback for d in result.decisions if d.seat == 0}
     assert "exception" in fallbacks
     fallbacks_illegal = {d.fallback for d in result.decisions if d.seat == 1}
@@ -65,13 +64,9 @@ def test_reveal_decisions_stamped_with_their_own_turn_index() -> None:
     decisions were stamped with the post-resolve turn_index they would be
     one greater than the turn_index of the history record they belong to.
     """
-    result = LocalGame(
-        [MaxBot(), PassBot(), PassBot()], seed=42, record_decisions=True
-    ).play()
+    result = LocalGame([MaxBot(), PassBot(), PassBot()], seed=42, record_decisions=True).play()
 
-    reveal_decisions = [
-        d for d in result.decisions if d.kind == "selectInfoToReveal"
-    ]
+    reveal_decisions = [d for d in result.decisions if d.kind == "selectInfoToReveal"]
     assert reveal_decisions, "expected at least one reveal decision in this game"
 
     turns_with_real_reveal = {
@@ -89,9 +84,7 @@ def test_reveal_decisions_stamped_with_their_own_turn_index() -> None:
     # reveal that resolves it.
     for turn_index in turns_with_real_reveal:
         bid_seats = {
-            d.seat
-            for d in result.decisions
-            if d.kind == "submitBid" and d.turn_index == turn_index
+            d.seat for d in result.decisions if d.kind == "submitBid" and d.turn_index == turn_index
         }
         assert bid_seats, f"expected bid decisions recorded for turn {turn_index}"
 
@@ -116,8 +109,7 @@ class RawOnlyBot(PocketRocksBot):
 
 
 def test_raw_decision_bots_get_live_dispatch() -> None:
-    result = LocalGame([RawOnlyBot(), PassBot(), PassBot()], seed=11,
-                       record_decisions=True).play()
+    result = LocalGame([RawOnlyBot(), PassBot(), PassBot()], seed=11, record_decisions=True).play()
     raw_seat_decisions = [d for d in result.decisions if d.seat == 0]
     assert raw_seat_decisions, "raw bot was never asked"
     assert all(d.fallback is None for d in raw_seat_decisions)
@@ -136,8 +128,9 @@ class FloatRevealBot(PocketRocksBot):
 
 
 def test_non_integral_values_become_illegal_fallbacks() -> None:
-    result = LocalGame([FloatRevealBot(), PassBot(), PassBot()], seed=13,
-                       record_decisions=True).play()
+    result = LocalGame(
+        [FloatRevealBot(), PassBot(), PassBot()], seed=13, record_decisions=True
+    ).play()
     assert len(result.scores) == 3  # the game completed — no TypeError escape
     reveal_decisions = [
         d for d in result.decisions if d.seat == 0 and d.kind == "selectInfoToReveal"

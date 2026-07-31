@@ -9,10 +9,10 @@ from .game import DecisionRecord, GameResult, LocalGame, bot_label
 from .state import RevealRecord, ScoreRow, TurnRecord
 
 __all__ = [
-    "BenchmarkSummary",
-    "BatchSimEngine",
     "BatchScores",
+    "BatchSimEngine",
     "BatchTurnOutcome",
+    "BenchmarkSummary",
     "BotProvider",
     "BotStats",
     "DecisionRecord",

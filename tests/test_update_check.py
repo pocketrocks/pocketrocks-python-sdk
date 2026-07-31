@@ -26,6 +26,7 @@ def _fake_fetch(payload: bytes | Exception):
         if isinstance(payload, Exception):
             raise payload
         return payload
+
     return fetch
 
 

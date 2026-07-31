@@ -60,7 +60,7 @@ def test_batch_matches_scalar_for_canonical_setup_groups_and_unicode_seeds() -> 
 
 
 def test_batch_matches_scalar_for_randomized_seeds() -> None:
-    randomizer = random.Random(8675309)
+    randomizer = random.Random(8675309)  # noqa: S311 -- test fixture RNG, not security-sensitive
     seeds = [randomizer.randbytes(randomizer.randrange(1, 80)).hex() for _ in range(127)]
 
     _assert_batch_matches_scalar((tuple(range(47)), tuple("pocketrocks")), seeds)

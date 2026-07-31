@@ -11,9 +11,9 @@ from pocketrocks.testing.scenario import Scenario, scenario
 from pocketrocks.testing.transport import FakeTransport, decode_frames, heartbeat_bytes
 
 __all__ = [
-    "scenario",
-    "Scenario",
     "FakeTransport",
+    "Scenario",
     "decode_frames",
     "heartbeat_bytes",
+    "scenario",
 ]

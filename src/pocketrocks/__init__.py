@@ -20,7 +20,8 @@ from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
 # by importing. run() installs a real handler for the script use case.
 logging.getLogger("pocketrocks").addHandler(logging.NullHandler())
 
-__all__ = [
+__all__ = [  # noqa: RUF022 -- grouped by category (version/core/reference docs), not
+    # alphabetical; the grouping is the point.
     # Version
     "__version__",
     # Core
