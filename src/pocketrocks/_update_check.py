@@ -53,7 +53,8 @@ class StaleSDKWarning(UserWarning):
 
 
 def _fetch(url: str, timeout: float) -> bytes:
-    with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 — hardcoded URL
+    # URL is always the module-level _RAW_URL constant.
+    with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 — _RAW_URL
         return bytes(response.read())
 
 
