@@ -20,7 +20,9 @@ dev = [
   # 3 spurious errors, so don't "fix" those by touching src.
   "numpy>=2.1,<2.3",
   "pytest>=8",
-  "pytest-asyncio>=0.23",
+  # 0.23.0-0.23.3 crash during collection under pytest>=8's Package collector
+  # (AttributeError: 'Package' object has no attribute 'obj'); fixed in 0.23.4.
+  "pytest-asyncio>=0.23.4",
   "ruff>=0.6",
   "mypy>=1.10",
 ]

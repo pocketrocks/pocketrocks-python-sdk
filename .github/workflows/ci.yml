@@ -39,3 +39,24 @@ jobs:
 
       - name: Pytest
         run: uv run pytest
+
+  floors:
+    name: Dependency floors (lowest-direct)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # Deliberately NOT --locked: the point is to resolve away from the lock,
+      # down to the oldest versions our pyproject floors permit. A green lock
+      # run plus a red floors run means our declared minimums are a lie.
+      - name: Install at lowest direct versions
+        run: uv sync --all-extras --resolution lowest-direct --python 3.10
+
+      - name: Pytest
+        run: uv run pytest

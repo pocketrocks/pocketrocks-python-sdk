@@ -357,7 +357,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.1" },
     { name = "numpy", marker = "extra == 'dev'", specifier = ">=2.1,<2.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.4" },
     { name = "python-dotenv", specifier = ">=1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "websockets", specifier = ">=14" },
