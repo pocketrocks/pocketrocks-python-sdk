@@ -25,6 +25,7 @@ dev = [
   "pytest-asyncio>=0.23.4",
   "ruff>=0.6",
   "mypy>=1.10",
+  "pre-commit>=3",
 ]
 
 [tool.setuptools]
