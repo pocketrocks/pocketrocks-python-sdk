@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from pocketrocks._reporting import report_rejection
 from pocketrocks._update_check import kickoff_update_check
 from pocketrocks.bot import PocketRocksBot
-from pocketrocks.exceptions import InvalidBotDecision
-from pocketrocks.types import BotDecision, DecisionContext, decisionKind
+from pocketrocks.types import BotDecision, DecisionContext, classify, decisionKind
 
 from .context import build_sim_request_and_context
 from .engine import SimEngine
 from .state import ScoreRow, TurnRecord
+
+logger = logging.getLogger("pocketrocks.sim")
 
 
 @dataclass(frozen=True)
@@ -115,9 +118,31 @@ class LocalGame:
                 decision = await bot.choose_raw_decision(request, context)
             else:
                 decision = await bot.choose_decision(context)
-            context.validate(decision)
-        except InvalidBotDecision:
-            fallback = "illegal"
+            applied, rejection, outgoing = classify(context, decision)
+            if rejection is not None:
+                await report_rejection(
+                    bot,
+                    logger,
+                    context=context,
+                    decision=decision,
+                    error=rejection,
+                    applied=applied,
+                    debug=bot.config.debug,
+                    corrected=outgoing if applied == "corrected" else None,
+                )
+            # "forwarded" is not a fallback: the raw value goes to the engine,
+            # which clamps it with the same formula the server uses. Only
+            # "discarded" substitutes, matching the server recording 0 for a
+            # player whose decision never arrived.
+            if applied == "discarded":
+                fallback = "illegal"
+            else:
+                # For "corrected", `outgoing` is the wire-representable substitute;
+                # for "ok" and "forwarded" it is `decision` itself. Using it here is
+                # what makes the sim feed its engine exactly what the live runtime
+                # puts on the wire. The bot's original value is still reported in the
+                # decisionRejected event's `value` field.
+                decision = outgoing
         except Exception:  # noqa: BLE001 — a bot bug becomes the timeout fallback
             fallback = "exception"
         if self._record:

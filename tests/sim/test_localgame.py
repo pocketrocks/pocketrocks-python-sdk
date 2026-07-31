@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pocketrocks import BotDecision, DecisionContext, PocketRocksBot
 from pocketrocks.sim import LocalGame
+from pocketrocks.types import RuntimeEvent
 
 
 class MaxBot(PocketRocksBot):
@@ -26,6 +27,13 @@ class IllegalBot(PocketRocksBot):
         return BotDecision.submit_bid(10_000)
 
 
+class WrongKindBot(PocketRocksBot):
+    """Answers a bid request with a reveal — Tier A: the server has no repair path."""
+
+    async def choose_decision(self, context: DecisionContext) -> BotDecision:
+        return BotDecision.select_info_to_reveal(0)
+
+
 def test_deterministic_game() -> None:
     a = LocalGame([MaxBot(), PassBot(), PassBot()], seed=42).play()
     b = LocalGame([MaxBot(), PassBot(), PassBot()], seed=42).play()
@@ -35,15 +43,24 @@ def test_deterministic_game() -> None:
     assert a.seats == ("MaxBot", "PassBot", "PassBot")
 
 
-def test_crash_and_illegal_fall_back_like_a_timeout() -> None:
-    result = LocalGame([CrashBot(), IllegalBot(), PassBot()], seed=7,
+def test_crash_and_unrepairable_illegal_fall_back_like_a_timeout() -> None:
+    result = LocalGame([CrashBot(), WrongKindBot(), PassBot()], seed=7,
                        record_decisions=True).play()
-    fallbacks = {d.fallback for d in result.decisions if d.seat == 0}
-    assert "exception" in fallbacks
-    fallbacks_illegal = {d.fallback for d in result.decisions if d.seat == 1}
-    assert "illegal" in fallbacks_illegal
+    assert "exception" in {d.fallback for d in result.decisions if d.seat == 0}
+    assert "illegal" in {d.fallback for d in result.decisions if d.seat == 1}
     # The game still completes and produces scores.
     assert len(result.scores) == 3
+
+
+def test_an_overbid_is_no_longer_a_fallback() -> None:
+    # IllegalBot bids 10_000. The server would clamp that to legal max, so the sim
+    # must forward it to the engine (which clamps identically) rather than
+    # collapsing it to 0 and training the bot against a penalty that does not exist.
+    result = LocalGame([IllegalBot(), PassBot(), PassBot()], seed=7,
+                       record_decisions=True).play()
+    bids = [d for d in result.decisions if d.seat == 0 and d.kind == "submitBid"]
+    assert bids, "seat 0 was never asked to bid"
+    assert all(d.fallback is None for d in bids)
 
 
 def test_decision_log_off_by_default() -> None:
@@ -144,3 +161,61 @@ def test_non_integral_values_become_illegal_fallbacks() -> None:
     ]
     assert reveal_decisions, "winner was never asked to reveal"
     assert all(d.fallback == "illegal" for d in reveal_decisions)
+
+
+class ReportingOverbidBot(PocketRocksBot):
+    """Bids far above legal max and records everything the runtime tells it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.runtime_events: list[RuntimeEvent] = []
+        self.errors: list[Exception] = []
+
+    async def choose_decision(self, context: DecisionContext) -> BotDecision:
+        if context.decision_kind == "submitBid":
+            return BotDecision.submit_bid(9_999)
+        return BotDecision.select_info_to_reveal(0)
+
+    async def on_runtime_event(self, event: RuntimeEvent) -> None:
+        self.runtime_events.append(event)
+
+    async def on_error(self, error: Exception) -> None:
+        self.errors.append(error)
+
+
+def _rejections(bot: ReportingOverbidBot) -> list[RuntimeEvent]:
+    return [e for e in bot.runtime_events if e.kind == "decisionRejected"]
+
+
+def test_sim_reports_an_overbid_as_forwarded() -> None:
+    bot = ReportingOverbidBot()
+    result = LocalGame([bot, PassBot(), PassBot()], seed=7, record_decisions=True).play()
+
+    events = _rejections(bot)
+    assert events, "an overbid must be reported in the sim, not silently absorbed"
+    assert events[0].details["applied"] == "forwarded"
+    assert events[0].details["value"] == 9_999
+    assert "legal maximum" in events[0].details["detail"]
+    assert bot.errors
+
+    # Forwarded, so the engine received the raw value and clamped it. The
+    # overbidding bot therefore actually competes for auctions.
+    assert any(max(turn.effective_bids) > 0 for turn in result.history)
+
+
+def test_sim_reports_an_out_of_range_reveal_as_discarded() -> None:
+    class BadRevealBot(ReportingOverbidBot):
+        async def choose_decision(self, context: DecisionContext) -> BotDecision:
+            if context.decision_kind == "submitBid":
+                return BotDecision.submit_bid(context.legal_max_amount or 0)
+            return BotDecision.select_info_to_reveal(99)
+
+    bot = BadRevealBot()
+    result = LocalGame([bot, PassBot(), PassBot()], seed=13, record_decisions=True).play()
+
+    events = _rejections(bot)
+    assert events
+    assert events[0].details["applied"] == "discarded"
+    reveals = [d for d in result.decisions if d.seat == 0 and d.kind == "selectInfoToReveal"]
+    assert reveals, "winner was never asked to reveal"
+    assert all(d.fallback == "illegal" for d in reveals)
