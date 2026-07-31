@@ -1,0 +1,49 @@
+name: PR Title Lint
+
+# `edited` is required here (a title fix must re-run the check) and is exactly
+# why this cannot live in ci.yml — see the note in that file's trigger block.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    name: PR title is a Conventional Commit
+    runs-on: ubuntu-latest
+    steps:
+      # Implemented inline rather than with a third-party action: the whole
+      # check is one regex, and a marketplace action here would be a supply
+      # chain dependency for no benefit.
+      - name: Validate title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -eu
+          PATTERN='^(feat|fix|chore|docs|refactor|perf|test|build|ci|revert|style)(\([a-z0-9._/-]+\))?!?: .+'
+          if printf '%s' "$PR_TITLE" | grep -Eq "$PATTERN"; then
+            echo "OK: $PR_TITLE"
+            exit 0
+          fi
+          cat >&2 <<'EOF'
+          PR title is not a Conventional Commit.
+
+          This repo squash-merges, so the PR title becomes the commit message
+          on develop.
+
+          Format:  <type>(<optional scope>): <description>
+          Types:   feat fix chore docs refactor perf test build ci revert style
+
+          Examples:
+            feat(sim): add deterministic replay seeds
+            fix: guard against a missing legal_max_amount
+            docs(readme): document POCKETROCKS_SKIP_VERSION_CHECK
+          EOF
+          echo "Received: $PR_TITLE" >&2
+          exit 1
