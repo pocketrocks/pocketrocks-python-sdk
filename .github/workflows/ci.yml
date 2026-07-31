@@ -4,12 +4,18 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
   push:
+    # develop, not main: this repo integrates on develop, and
+    # src/pocketrocks/_update_check.py treats develop's tip as the published
+    # SDK version. develop merge commits are the ones needing a post-merge verdict.
     branches:
-      - main
+      - develop
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # PR runs share a per-ref group and cancel freely — a newer push supersedes.
+  # Push runs get SHA-unique groups so each merge commit's run completes: it is
+  # the only post-merge signal that commit will ever get.
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
