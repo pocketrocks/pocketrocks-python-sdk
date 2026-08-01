@@ -111,6 +111,38 @@ def test_classify_accepts_pass_for_both_request_kinds() -> None:
     assert classify(_reveal_context(3), BotDecision.pass_turn())[0] == "ok"
 
 
+def test_a_pass_carrying_a_value_is_unencodable() -> None:
+    # The wire has no field for a value on a pass, so encode_frame rejects it.
+    # Both request kinds must discard it — otherwise the live runtime raises in
+    # the codec (requestFailed) while the sim silently ignores the stray value.
+    valued_pass = BotDecision(action_kind="pass", value=1)
+    for context in (_bid_context(10), _reveal_context(3)):
+        applied, error, _ = classify(context, valued_pass)
+        assert applied == "discarded"
+        assert error is not None
+        assert "pass" in str(error)
+
+
+def test_a_valued_pass_survives_the_codec_after_discarding() -> None:
+    # Proof the classification matches the codec: a plain pass encodes, a valued
+    # one would raise — which is exactly why it is discarded rather than sent.
+    from pocketrocks.exceptions import InvalidBotDecision
+    from pocketrocks.internal.bot_wire_v2 import DecisionResponse, encode_frame
+
+    _bid_context(10).validate(BotDecision(action_kind="pass"))  # legal, no raise
+    with pytest.raises(InvalidBotDecision, match="pass responses must not carry a value"):
+        _bid_context(10).validate(BotDecision(action_kind="pass", value=1))
+    with pytest.raises(ValueError, match="pass responses must not include a value"):
+        encode_frame(
+            DecisionResponse(
+                kind="decisionResponse",
+                request_id="11111111-1111-1111-1111-111111111111",
+                action_kind="pass",
+                value=1,
+            )
+        )
+
+
 def test_classify_corrects_a_negative_bid_to_zero() -> None:
     # The wire cannot carry a negative varint, so "forward it and let the server
     # clamp" is impossible. 0 is what the server would have computed anyway.

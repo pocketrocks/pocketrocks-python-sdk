@@ -144,6 +144,14 @@ def _check_encodable(context: DecisionContext, decision: BotDecision) -> None:
     response kind has no handler, and ``revealInfoCard`` looks a card up by id
     and does nothing when it is absent rather than clamping the index.
     """
+    # A pass is legal for either request kind, but the wire has no field for a
+    # value on it — ``encode_frame`` raises on a valued pass. Checking it here,
+    # before the request-kind branches, keeps the two surfaces consistent: the
+    # live runtime would otherwise reach the codec and emit ``requestFailed``,
+    # while the sim would silently drop the stray value and treat it as a plain
+    # pass. There is nothing to repair, so it belongs in the unrepairable tier.
+    if decision.action_kind == "pass" and decision.value is not None:
+        raise InvalidBotDecision("pass responses must not carry a value")
     if context.decision_kind == "submitBid":
         if decision.action_kind == "selectInfoToReveal":
             raise InvalidBotDecision("submitBid requests cannot receive reveal responses")
