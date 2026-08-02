@@ -10,13 +10,39 @@ from dataclasses import dataclass
 from pocketrocks._reporting import report_rejection
 from pocketrocks._update_check import kickoff_update_check
 from pocketrocks.bot import PocketRocksBot
-from pocketrocks.types import BotDecision, DecisionContext, classify, decisionKind
+from pocketrocks.exceptions import InvalidBotDecision
+from pocketrocks.types import (
+    BotDecision,
+    DecisionContext,
+    classify,
+    decisionFate,
+    decisionKind,
+)
 
 from .context import build_sim_request_and_context
 from .engine import SimEngine
 from .state import ScoreRow, TurnRecord
 
 logger = logging.getLogger("pocketrocks.sim")
+
+
+@dataclass(frozen=True)
+class _PendingRejection:
+    """A rejection whose reporting is deferred until the engine has the decision.
+
+    The sim reports illegal decisions *after* the value reaches the engine, so a
+    slow or misbehaving telemetry hook can never delay the game or change what the
+    engine sees. ``_ask`` builds this and commits the decision record; the game
+    loop fires it via ``_report`` once ``engine.resolve`` / ``apply_reveal`` has
+    consumed the value.
+    """
+
+    bot: PocketRocksBot
+    context: DecisionContext
+    decision: BotDecision
+    error: InvalidBotDecision
+    applied: decisionFate
+    outgoing: BotDecision
 
 
 @dataclass(frozen=True)
@@ -83,16 +109,26 @@ class LocalGame:
         while engine.flip_action() is not None:
             turn = engine.turn_index
             raw_bids: list[int] = []
+            pending_bids: list[_PendingRejection] = []
             for seat, bot in enumerate(self._bots):
-                raw_bids.append(await self._ask_bid(seat, bot, turn))
+                value, pending = await self._ask_bid(seat, bot, turn)
+                raw_bids.append(value)
+                if pending is not None:
+                    pending_bids.append(pending)
             outcome = engine.resolve(raw_bids)
+            # The engine has now consumed every bid, so reporting the rejected
+            # ones cannot change the auction or gate it on a telemetry hook.
+            for pending in pending_bids:
+                await self._report(pending)
             if outcome.reveal_needed == "auto":
                 engine.apply_reveal(outcome.winner_seat, 0, auto=True)
             elif outcome.reveal_needed == "choice":
-                index = await self._ask_reveal(
+                index, reveal_pending = await self._ask_reveal(
                     outcome.winner_seat, self._bots[outcome.winner_seat], turn
                 )
                 engine.apply_reveal(outcome.winner_seat, index, auto=False)
+                if reveal_pending is not None:
+                    await self._report(reveal_pending)
         scores = tuple(engine.score())
         ranking = tuple(engine.ranking())
         return GameResult(
@@ -104,9 +140,21 @@ class LocalGame:
             decisions=tuple(self._decisions),
         )
 
+    async def _report(self, pending: _PendingRejection) -> None:
+        await report_rejection(
+            pending.bot,
+            logger,
+            context=pending.context,
+            decision=pending.decision,
+            error=pending.error,
+            applied=pending.applied,
+            debug=pending.bot.config.debug,
+            outgoing=pending.outgoing,
+        )
+
     async def _ask(
         self, seat: int, bot: PocketRocksBot, kind: decisionKind, turn_index: int
-    ) -> tuple[BotDecision | None, str | None, DecisionContext]:
+    ) -> tuple[BotDecision | None, str | None, _PendingRejection | None]:
         request, context = build_sim_request_and_context(
             self._engine, seat, kind, budget_ms=self._budget_ms, turn_index=turn_index
         )
@@ -114,6 +162,7 @@ class LocalGame:
         dispatched: BotDecision | None = None
         corrected: BotDecision | None = None
         fallback: str | None = None
+        pending: _PendingRejection | None = None
         try:
             # Mirror the live runtime's dispatch: bots overriding the
             # choose_raw_decision escape hatch get the wire frame too.
@@ -122,9 +171,6 @@ class LocalGame:
             else:
                 decision = await bot.choose_decision(context)
             applied, rejection, outgoing = classify(context, decision)
-            # Commit the dispatch outcome before reporting: report_rejection awaits
-            # user-defined callbacks, and a slow or raising hook must never be able
-            # to change what the engine receives or what gets recorded.
             # "forwarded" is not a fallback: the raw value goes to the engine,
             # which clamps it with the same formula the server uses. Only
             # "discarded" substitutes, matching the server recording 0 for a
@@ -141,14 +187,18 @@ class LocalGame:
                 if applied == "corrected":
                     corrected = outgoing
             if rejection is not None:
-                await report_rejection(
-                    bot,
-                    logger,
+                # Defer reporting: report_rejection awaits user telemetry hooks,
+                # and the engine must receive the decision (via the caller's
+                # resolve / apply_reveal) before any hook runs, so a slow or
+                # misbehaving hook can never gate game progress. The record below
+                # is committed now, independent of the hook, so training data is
+                # never lost to a stalled callback.
+                pending = _PendingRejection(
+                    bot=bot,
                     context=context,
                     decision=decision,
                     error=rejection,
                     applied=applied,
-                    debug=bot.config.debug,
                     outgoing=outgoing,
                 )
         except Exception:  # noqa: BLE001 — a bot bug becomes the timeout fallback
@@ -165,16 +215,20 @@ class LocalGame:
                     corrected=corrected,
                 )
             )
-        return dispatched, fallback, context
+        return dispatched, fallback, pending
 
-    async def _ask_bid(self, seat: int, bot: PocketRocksBot, turn_index: int) -> int:
-        decision, fallback, _context = await self._ask(seat, bot, "submitBid", turn_index)
+    async def _ask_bid(
+        self, seat: int, bot: PocketRocksBot, turn_index: int
+    ) -> tuple[int, _PendingRejection | None]:
+        decision, fallback, pending = await self._ask(seat, bot, "submitBid", turn_index)
         if fallback is not None or decision is None or decision.action_kind != "submitBid":
-            return 0  # pass, crash, and illegal all bid 0 — the server's fallback
-        return decision.value or 0
+            return 0, pending  # pass, crash, and illegal all bid 0 — the server's fallback
+        return decision.value or 0, pending
 
-    async def _ask_reveal(self, seat: int, bot: PocketRocksBot, turn_index: int) -> int:
-        decision, fallback, _context = await self._ask(
+    async def _ask_reveal(
+        self, seat: int, bot: PocketRocksBot, turn_index: int
+    ) -> tuple[int, _PendingRejection | None]:
+        decision, fallback, pending = await self._ask(
             seat, bot, "selectInfoToReveal", turn_index
         )
         if (
@@ -183,5 +237,5 @@ class LocalGame:
             or decision.action_kind != "selectInfoToReveal"
             or decision.value is None
         ):
-            return 0  # auto-reveal-first, the server's timeout fallback
-        return decision.value
+            return 0, pending  # auto-reveal-first, the server's timeout fallback
+        return decision.value, pending

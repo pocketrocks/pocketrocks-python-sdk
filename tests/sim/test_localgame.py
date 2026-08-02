@@ -187,6 +187,53 @@ def _rejections(bot: ReportingOverbidBot) -> list[RuntimeEvent]:
     return [e for e in bot.runtime_events if e.kind == "decisionRejected"]
 
 
+class _LoggingBot(PocketRocksBot):
+    """Appends to a shared log when it decides and when it is told of a rejection.
+
+    Lets a test observe the interleaving of decisions and rejection reports across
+    seats within a turn.
+    """
+
+    def __init__(self, seat: int, log: list[str], *, overbid: bool) -> None:
+        super().__init__()
+        self._seat = seat
+        self._log = log
+        self._overbid = overbid
+
+    async def choose_decision(self, context: DecisionContext) -> BotDecision:
+        self._log.append(f"decide:{self._seat}")
+        if context.decision_kind == "submitBid":
+            return BotDecision.submit_bid(9_999 if self._overbid else 0)
+        return BotDecision.select_info_to_reveal(0)
+
+    async def on_runtime_event(self, event: RuntimeEvent) -> None:
+        if event.kind == "decisionRejected":
+            self._log.append(f"report:{self._seat}")
+
+
+def test_sim_reports_a_rejection_only_after_the_engine_has_the_bids() -> None:
+    # Ordering guard: reporting awaits user telemetry hooks, so it must run only
+    # after the engine has consumed the turn's bids — never interleaved during
+    # bid gathering, where a slow hook would stall the auction. Seat 0 overbids
+    # (forwarded, so reported); seats 1 and 2 pass. The report for seat 0 must
+    # come after every seat has decided for the turn, not before seats 1 and 2.
+    log: list[str] = []
+    bots = [
+        _LoggingBot(0, log, overbid=True),
+        _LoggingBot(1, log, overbid=False),
+        _LoggingBot(2, log, overbid=False),
+    ]
+    LocalGame(bots, seed=7).play()
+
+    assert "report:0" in log, "an overbid must be reported"
+    first_report = log.index("report:0")
+    # Both other seats decided (for the first turn) before seat 0's rejection was
+    # reported. Under the old in-_ask reporting this failed: report:0 fired inside
+    # seat 0's turn, before decide:1 / decide:2.
+    assert log.index("decide:1") < first_report
+    assert log.index("decide:2") < first_report
+
+
 def test_sim_reports_an_overbid_as_forwarded() -> None:
     bot = ReportingOverbidBot()
     result = LocalGame([bot, PassBot(), PassBot()], seed=7, record_decisions=True).play()
