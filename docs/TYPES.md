@@ -88,8 +88,16 @@ MyBot(
     reconnect_base_delay_seconds: float | None = None,          # default 0.5
     reconnect_max_delay_seconds: float | None = None,           # default 8.0
     rejected_reconnect_max_delay_seconds: float | None = None,  # default 60.0
+    debug: bool | None = None,                   # default False
 )
 ```
+
+`debug` (env: `POCKETROCKS_DEBUG`) is detail-only: it adds the full
+[`DecisionContext`](#decisioncontext) to a
+[`decisionRejected`](#decisionrejected-details) event's `details["context"]`, so
+you can see exactly what your bot was looking at when it played an illegal move.
+It never gates whether that event fires, whether the rejection is logged, or what
+the SDK sends to the server.
 
 ---
 
