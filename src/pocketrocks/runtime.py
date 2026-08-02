@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from pocketrocks._reporting import report_rejection
+from pocketrocks._reporting import PendingRejection, RejectionReporter
 from pocketrocks.config import BotConfig
 from pocketrocks.constants import fatal_connect_status_codes
 from pocketrocks.exceptions import (
@@ -32,6 +32,12 @@ from pocketrocks.transport import WebSocketTransport
 from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent, classify
 
 logger = logging.getLogger("pocketrocks.runtime")
+
+# How long disconnect waits for reports still in flight before cancelling the
+# reporter. See ``RejectionReporter`` for why the wait is bounded at all; the value
+# matches the update check's ``_JOIN_TIMEOUT_S`` shutdown wait. Kept per-surface
+# because a live bot and a training loop could reasonably want different budgets.
+_REPORT_DRAIN_TIMEOUT_S = 1.5
 
 
 def now_ms() -> int:
@@ -59,6 +65,10 @@ class PocketRocksRuntime:
         self.policy = policy or ReconnectPolicy(config)
         self.write_lock = asyncio.Lock()
         self.stop_requested = False
+        # Rejections are reported off the workers — a bot's telemetry hook must not
+        # be able to occupy the worker that is about to take the next request.
+        # Shared with the sim so both surfaces deliver the same reports the same way.
+        self._reporter = RejectionReporter(logger)
 
     async def run(self) -> None:
         logger.info(
@@ -155,6 +165,12 @@ class PocketRocksRuntime:
                     await request_queue.put(None)
                 if workers:
                     await asyncio.gather(*workers, return_exceptions=True)
+                # After the workers, which can queue a report right up to their last
+                # item, and before on_disconnect, so a bot hears why a decision was
+                # rejected before it hears the connection ended. Bounded, then
+                # cancelled: shutdown must no more hang on a telemetry hook than a
+                # worker must. A reconnect gets a fresh reporter.
+                await self._reporter.drain(timeout_s=_REPORT_DRAIN_TIMEOUT_S)
                 await self.transport.disconnect()
                 if connected:
                     logger.info("disconnected from %s", self.config.server_url)
@@ -255,15 +271,21 @@ class PocketRocksRuntime:
                         decision_to_protocol_response(frame.request_id, outgoing)
                     )
                 if rejection is not None:
-                    await report_rejection(
-                        self.bot,
-                        logger,
-                        context=context,
-                        decision=decision,
-                        error=rejection,
-                        applied=applied,
-                        debug=self.config.debug,
-                        outgoing=outgoing,
+                    # Hand off, never await: report_rejection awaits user-defined
+                    # hooks, and a hook that blocks would own this worker until it
+                    # returned — starving max_in_flight_decisions and hanging the
+                    # gather() in run()'s finally. Sending first (above) protects
+                    # only this response; not awaiting protects the ones behind it.
+                    await self._reporter.hand_off(
+                        PendingRejection(
+                            bot=self.bot,
+                            context=context,
+                            decision=decision,
+                            error=rejection,
+                            applied=applied,
+                            debug=self.config.debug,
+                            outgoing=outgoing,
+                        )
                     )
                 if applied == "discarded":
                     continue

@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from pocketrocks import ActionId, BotDecision, PocketRocksBot, Suit
+from pocketrocks import runtime as runtime_module
 from pocketrocks.internal.bot_wire_v2 import DecisionRequest, DecisionResponse, Frame
 from pocketrocks.testing import FakeTransport, decode_frames, heartbeat_bytes, scenario
 from pocketrocks.types import DecisionContext, RuntimeEvent, decisionKind
@@ -515,6 +516,52 @@ async def test_on_runtime_event_raising_still_calls_on_error_and_sends_frame() -
     kinds = [e.kind for e in bot.runtime_events]
     assert kinds.count("requestCompleted") == 1
     assert kinds.count("requestFailed") == 0
+
+
+async def test_a_hanging_report_hook_does_not_occupy_the_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Liveness guard for the live runtime. Reporting awaits user-defined hooks, so
+    # it must not sit between a worker finishing one request and taking the next:
+    # with one worker and a hook that never returns, the first rejection would
+    # otherwise own that worker forever, leaving every later request queued until
+    # its deadline, and runtime shutdown would hang in gather() on the same task.
+    # Sending the response first protects only that response, not the ones behind it.
+    monkeypatch.setattr(runtime_module, "_REPORT_DRAIN_TIMEOUT_S", 0.05)
+
+    class HangingReportBot(FixedDecisionBot):
+        async def on_runtime_event(self, event: RuntimeEvent) -> None:
+            await super().on_runtime_event(event)
+            if event.kind == "decisionRejected":
+                await asyncio.Event().wait()
+
+    transport = FakeTransport(
+        [
+            _fixture_request_bytes(
+                request_id=f"9999999{n}-9999-9999-9999-999999999999", deadline_at=_now_ms(30_000)
+            )
+            for n in range(3)
+        ]
+    )
+    bot = HangingReportBot(
+        BotDecision.submit_bid(999),  # forwarded: rejected, and still sendable
+        api_key="test-key",
+        bot_id="bot_1234",
+        server_url="ws://example.test",
+        reconnect=False,
+        max_in_flight_decisions=1,  # one worker, so starving it is unmistakable
+        transport=transport,
+    )
+
+    await asyncio.wait_for(bot.run_async(), timeout=10)
+
+    sent = [f for f in decode_frames(transport.sent_messages) if f.kind == "decisionResponse"]
+    assert len(sent) == 3, "later requests must still be answered past the stuck report"
+    kinds = [e.kind for e in bot.runtime_events]
+    assert kinds.count("requestCompleted") == 3
+    # The hook really was entered — and only once: reports are serialized, so the
+    # two behind the stuck one are dropped at shutdown rather than delivered.
+    assert kinds.count("decisionRejected") == 1
 
 
 async def test_a_raised_exception_still_reports_request_failed_and_sends_nothing() -> None:
