@@ -98,11 +98,14 @@ forwarded and the engine clamps it to the legal maximum (matching `recordBid`),
 and a bid the wire can't carry (negative, or above the wire limit) is corrected
 into range and then clamped. So an overbidding bot competes for the auction in
 the sim exactly as it would live, rather than training against a 0-bid penalty
-that production never applies. Every such case — fallback, forwarded, or
-corrected — is reported to your `on_runtime_event` / `on_error` hooks off the
-game's path, by a background reporter, and delivery is best-effort: a slow or
-hanging hook never stalls the game, but its report (and any queued behind it)
-may be dropped at game end with a logged warning.
+that production never applies. A decision the SDK flags as *illegal* — whether
+it is discarded to the fallback, forwarded, or corrected — is reported to your
+`on_runtime_event` / `on_error` hooks off the game's path, by a background
+reporter. A bot that *raises* or times out is caught and given the fallback but
+is **not** surfaced through those hooks; only decisions the SDK inspects and
+rejects are reported. Delivery is best-effort: a slow or hanging hook never
+stalls the game, but its report (and any queued behind it) may be dropped at
+game end with a logged warning.
 Note that the local sim does not enforce the decision
 time budget itself (it just reports `decision_budget_ms` through
 `remaining_deadline_ms`) — only the live server actually times out a slow
@@ -239,7 +242,10 @@ Each entry in the list you pass to `run_games` (a `BotProvider`) can be:
 To collect what your bot actually saw and did — for RL training data or
 debugging — pass `record_decisions=True` and read `result.decisions`
 (`DecisionRecord`: turn index, seat, decision kind, the exact
-`DecisionContext`, the bot's `BotDecision`, and whether a fallback fired).
+`DecisionContext`, the bot's original `BotDecision`, whether a fallback fired,
+and — when the bot's bid could not be encoded and was corrected into wire range
+— the `corrected` substitute actually dispatched to the engine, so training-data
+consumers can tell the bot's intent from what the engine received).
 Don't try to recover this from bot instance state — with `workers>1` your
 instance never comes back from the worker process, and even with `workers=1`
 a fresh instance is constructed per game for class/factory providers.
