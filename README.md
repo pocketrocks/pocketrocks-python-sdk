@@ -89,13 +89,20 @@ print(result.scores)  # one ScoreRow per seat
 ```
 
 `LocalGame` takes 3-5 bot instances and plays one seeded game synchronously
-(`play()`) or as a coroutine (`await play_async()`). A bot that raises or
-returns an illegal decision doesn't crash the game — it gets the live
-server's timeout fallback (bid 0 / reveal the first card), exactly as it
-would in production. Rejected decisions are reported to your `on_runtime_event`
-/ `on_error` hooks off the game's path, by a background reporter, and delivery
-is best-effort: a slow or hanging hook never stalls the game, but its report
-(and any queued behind it) may be dropped at game end with a logged warning.
+(`play()`) or as a coroutine (`await play_async()`). A bot that raises, times
+out, or returns an *unrepairable* decision doesn't crash the game — it gets the
+live server's timeout fallback (bid 0 / reveal the first card), exactly as it
+would in production. A decision the server would *repair* is treated as the
+server would treat it, not collapsed to the fallback: an over-max bid is
+forwarded and the engine clamps it to the legal maximum (matching `recordBid`),
+and a bid the wire can't carry (negative, or above the wire limit) is corrected
+into range and then clamped. So an overbidding bot competes for the auction in
+the sim exactly as it would live, rather than training against a 0-bid penalty
+that production never applies. Every such case — fallback, forwarded, or
+corrected — is reported to your `on_runtime_event` / `on_error` hooks off the
+game's path, by a background reporter, and delivery is best-effort: a slow or
+hanging hook never stalls the game, but its report (and any queued behind it)
+may be dropped at game end with a logged warning.
 Note that the local sim does not enforce the decision
 time budget itself (it just reports `decision_budget_ms` through
 `remaining_deadline_ms`) — only the live server actually times out a slow

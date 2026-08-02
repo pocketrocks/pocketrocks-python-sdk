@@ -109,19 +109,40 @@ class RejectionReporter:
             pending = await queue.get()
             if pending is None:  # sentinel: everything queued before it is reported
                 return
+            # Deliver as a child task so a CancelledError raised *inside* a bot's
+            # hook (e.g. it awaited a task cancelled elsewhere) stays contained to
+            # that one report. CancelledError is a BaseException, so it would slip
+            # past an `except Exception` and end this worker — leaving `_queue`
+            # non-None, so every later hand_off would enqueue into an orphaned
+            # queue and vanish. `asyncio.wait` raises only if *this* worker is
+            # cancelled, which is drain's shutdown and must still stop us.
+            report = asyncio.ensure_future(self._deliver(pending))
             try:
-                await report_rejection(
-                    pending.bot,
-                    self._logger,
-                    context=pending.context,
-                    decision=pending.decision,
-                    error=pending.error,
-                    applied=pending.applied,
-                    debug=pending.debug,
-                    outgoing=pending.outgoing,
+                await asyncio.wait({report})
+            except asyncio.CancelledError:
+                report.cancel()
+                with contextlib.suppress(BaseException):
+                    await report
+                raise
+            if report.cancelled():
+                self._logger.warning(
+                    "request %s: a reporting hook was cancelled; its report was dropped",
+                    pending.context.request_id,
                 )
-            except Exception as error:  # noqa: BLE001 — telemetry never kills the worker
+            elif (error := report.exception()) is not None:
                 self._logger.warning("reporting a rejected decision failed: %s", error)
+
+    async def _deliver(self, pending: PendingRejection) -> None:
+        await report_rejection(
+            pending.bot,
+            self._logger,
+            context=pending.context,
+            decision=pending.decision,
+            error=pending.error,
+            applied=pending.applied,
+            debug=pending.debug,
+            outgoing=pending.outgoing,
+        )
 
     async def drain(self, *, timeout_s: float | None = None) -> None:
         """Let in-flight reports finish, then cancel the worker.
