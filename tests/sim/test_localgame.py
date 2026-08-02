@@ -44,8 +44,9 @@ def test_deterministic_game() -> None:
 
 
 def test_crash_and_unrepairable_illegal_fall_back_like_a_timeout() -> None:
-    result = LocalGame([CrashBot(), WrongKindBot(), PassBot()], seed=7,
-                       record_decisions=True).play()
+    result = LocalGame(
+        [CrashBot(), WrongKindBot(), PassBot()], seed=7, record_decisions=True
+    ).play()
     assert "exception" in {d.fallback for d in result.decisions if d.seat == 0}
     assert "illegal" in {d.fallback for d in result.decisions if d.seat == 1}
     # The game still completes and produces scores.
@@ -56,8 +57,7 @@ def test_an_overbid_is_no_longer_a_fallback() -> None:
     # IllegalBot bids 10_000. The server would clamp that to legal max, so the sim
     # must forward it to the engine (which clamps identically) rather than
     # collapsing it to 0 and training the bot against a penalty that does not exist.
-    result = LocalGame([IllegalBot(), PassBot(), PassBot()], seed=7,
-                       record_decisions=True).play()
+    result = LocalGame([IllegalBot(), PassBot(), PassBot()], seed=7, record_decisions=True).play()
     bids = [d for d in result.decisions if d.seat == 0 and d.kind == "submitBid"]
     assert bids, "seat 0 was never asked to bid"
     assert all(d.fallback is None for d in bids)

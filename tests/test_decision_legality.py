@@ -99,7 +99,8 @@ def test_classify_discards_a_mismatched_response_kind() -> None:
 
 def test_classify_discards_a_non_integer_bid() -> None:
     applied, error, _outgoing = classify(
-        _bid_context(10), BotDecision(action_kind="submitBid", value=1.5)
+        _bid_context(10),
+        BotDecision(action_kind="submitBid", value=1.5),  # type: ignore[arg-type]
     )
     assert applied == "discarded"
     assert error is not None

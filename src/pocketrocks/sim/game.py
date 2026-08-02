@@ -228,9 +228,7 @@ class LocalGame:
     async def _ask_reveal(
         self, seat: int, bot: PocketRocksBot, turn_index: int
     ) -> tuple[int, _PendingRejection | None]:
-        decision, fallback, pending = await self._ask(
-            seat, bot, "selectInfoToReveal", turn_index
-        )
+        decision, fallback, pending = await self._ask(seat, bot, "selectInfoToReveal", turn_index)
         if (
             fallback is not None
             or decision is None

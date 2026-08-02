@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from pocketrocks import ActionId, BotDecision, PocketRocksBot, Suit
-from pocketrocks.internal.bot_wire_v2 import DecisionRequest, DecisionResponse
+from pocketrocks.internal.bot_wire_v2 import DecisionRequest, DecisionResponse, Frame
 from pocketrocks.testing import FakeTransport, decode_frames, heartbeat_bytes, scenario
 from pocketrocks.types import DecisionContext, RuntimeEvent, decisionKind
 
@@ -346,7 +346,9 @@ class FixedDecisionBot(RecordingBot):
         return self._decision
 
 
-async def _run_with_decision(decision: BotDecision, *, debug: bool = False):
+async def _run_with_decision(
+    decision: BotDecision, *, debug: bool = False
+) -> tuple[FixedDecisionBot, list[Frame]]:
     transport = FakeTransport(
         [
             _fixture_request_bytes(
@@ -372,7 +374,7 @@ def _rejections(bot: RecordingBot) -> list[RuntimeEvent]:
     return [e for e in bot.runtime_events if e.kind == "decisionRejected"]
 
 
-async def test_overbid_is_forwarded_to_the_server_which_clamps_it():
+async def test_overbid_is_forwarded_to_the_server_which_clamps_it() -> None:
     # legal_max is 20 in the fixture; the server clamps, so swallowing would be worse.
     bot, sent = await _run_with_decision(BotDecision.submit_bid(999))
 
@@ -391,7 +393,7 @@ async def test_overbid_is_forwarded_to_the_server_which_clamps_it():
     assert [e.kind for e in bot.runtime_events].count("requestCompleted") == 1
 
 
-async def test_negative_bid_is_corrected_to_zero_and_sent():
+async def test_negative_bid_is_corrected_to_zero_and_sent() -> None:
     # The wire cannot carry a negative varint, so -5 is coerced to 0 and sent.
     # 0 is the same bid the server would have computed, and sending it also sets
     # submitted=true so the auction resolves without waiting out the bid window.
@@ -400,11 +402,11 @@ async def test_negative_bid_is_corrected_to_zero_and_sent():
     assert [f.value for f in sent if f.kind == "decisionResponse"] == [0]
     details = _rejections(bot)[0].details
     assert details["applied"] == "corrected"
-    assert details["value"] == -5           # what the bot returned
+    assert details["value"] == -5  # what the bot returned
     assert details["corrected_value"] == 0  # what actually went on the wire
 
 
-async def test_mismatched_response_kind_is_discarded():
+async def test_mismatched_response_kind_is_discarded() -> None:
     bot, sent = await _run_with_decision(BotDecision.select_info_to_reveal(0))
 
     assert [f for f in sent if f.kind == "decisionResponse"] == []
@@ -415,13 +417,13 @@ async def test_mismatched_response_kind_is_discarded():
     assert [e.kind for e in bot.runtime_events].count("requestCompleted") == 0
 
 
-async def test_rejection_does_not_emit_request_failed():
+async def test_rejection_does_not_emit_request_failed() -> None:
     # requestFailed must regain its real meaning: something threw.
     bot, _sent = await _run_with_decision(BotDecision.select_info_to_reveal(0))
     assert [e.kind for e in bot.runtime_events].count("requestFailed") == 0
 
 
-async def test_legal_decision_emits_no_rejection():
+async def test_legal_decision_emits_no_rejection() -> None:
     bot, sent = await _run_with_decision(BotDecision.submit_bid(20))
 
     assert [f.value for f in sent if f.kind == "decisionResponse"] == [20]
@@ -429,7 +431,7 @@ async def test_legal_decision_emits_no_rejection():
     assert [e.kind for e in bot.runtime_events].count("requestCompleted") == 1
 
 
-async def test_debug_off_omits_context_and_debug_on_includes_it():
+async def test_debug_off_omits_context_and_debug_on_includes_it() -> None:
     off, _ = await _run_with_decision(BotDecision.submit_bid(999), debug=False)
     assert "context" not in _rejections(off)[0].details
 
@@ -437,7 +439,7 @@ async def test_debug_off_omits_context_and_debug_on_includes_it():
     assert isinstance(_rejections(on)[0].details["context"], DecisionContext)
 
 
-async def test_on_error_raising_still_sends_forwarded_frame_and_completes():
+async def test_on_error_raising_still_sends_forwarded_frame_and_completes() -> None:
     # report_rejection runs after the frame is sent and must be best-effort: a
     # bot's on_error blowing up must not turn a successfully-dispatched forwarded
     # decision into a requestFailed / swallowed response.
@@ -476,7 +478,7 @@ async def test_on_error_raising_still_sends_forwarded_frame_and_completes():
     assert len(bot.errors) == 1  # on_error was in fact called, before it raised
 
 
-async def test_on_runtime_event_raising_still_calls_on_error_and_sends_frame():
+async def test_on_runtime_event_raising_still_calls_on_error_and_sends_frame() -> None:
     # A raising on_runtime_event must not prevent on_error from running, and must
     # not prevent the frame that was already sent from counting as completed.
     class EventRaisingBot(FixedDecisionBot):
@@ -515,7 +517,7 @@ async def test_on_runtime_event_raising_still_calls_on_error_and_sends_frame():
     assert kinds.count("requestFailed") == 0
 
 
-async def test_a_raised_exception_still_reports_request_failed_and_sends_nothing():
+async def test_a_raised_exception_still_reports_request_failed_and_sends_nothing() -> None:
     class ExplodingBot(RecordingBot):
         async def choose_decision(self, context: DecisionContext) -> BotDecision:
             raise RuntimeError("bot blew up")

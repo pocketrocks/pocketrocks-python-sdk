@@ -108,9 +108,7 @@ async def _live_rejection(decision: BotDecision) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(("decision", "expected"), CASES)
-async def test_sim_and_live_report_the_same_rejection(
-    decision: BotDecision, expected: str
-) -> None:
+async def test_sim_and_live_report_the_same_rejection(decision: BotDecision, expected: str) -> None:
     sim = await _sim_rejection(decision)
     live = await _live_rejection(decision)
 
