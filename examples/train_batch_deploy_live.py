@@ -113,8 +113,11 @@ def train() -> tuple[float, float, float]:
         # Baseline for every seat, then overwrite seat 0 with the candidate.
         bids = np.asarray(legal_max, dtype=np.int64) // 3
         candidate = policy_bids(
-            a_by_row[:, 0], b_by_row[:, 0], estimated_value[:, 0],
-            cash_fraction[:, 0], legal_max[:, 0],
+            a_by_row[:, 0],
+            b_by_row[:, 0],
+            estimated_value[:, 0],
+            cash_fraction[:, 0],
+            legal_max[:, 0],
         )
         bids[:, 0] = candidate
         outcome = engine.resolve_bids(bids)

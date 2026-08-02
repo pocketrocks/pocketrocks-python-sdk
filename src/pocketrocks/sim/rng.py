@@ -126,9 +126,7 @@ class _BatchMersenneTwister:
         for index in range(1, _N):
             previous = mt[:, index - 1].astype(np.uint64)
             mixed = previous ^ (previous >> np.uint64(30))
-            mt[:, index] = (
-                1812433253 * mixed + index
-            ).astype(np.uint32)
+            mt[:, index] = (1812433253 * mixed + index).astype(np.uint32)
 
         key_indices = np.zeros(len(encoded), dtype=np.intp)
         iteration_counts = np.maximum(_N, key_lengths)
@@ -222,9 +220,7 @@ def _batch_integer_upto(
     while pending_positions.size:
         values = rng.next_uint32(rows[pending_positions]).astype(np.uint64)
         accepted = values < maximum
-        result[pending_positions[accepted]] = (
-            values[accepted] % extended_range
-        ).astype(np.intp)
+        result[pending_positions[accepted]] = (values[accepted] % extended_range).astype(np.intp)
         pending_positions = pending_positions[~accepted]
     return result
 

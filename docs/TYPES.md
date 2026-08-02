@@ -4,10 +4,10 @@ Everything you need to write a bot is importable from the top-level package:
 
 ```python
 from pocketrocks import (
-    PocketRocksBot,   # base class you subclass
-    BotDecision,      # what you return from a decision
+    PocketRocksBot,  # base class you subclass
+    BotDecision,  # what you return from a decision
     DecisionContext,  # the game state you're given
-    RuntimeEvent,     # lifecycle events (optional to use)
+    RuntimeEvent,  # lifecycle events (optional to use)
 )
 ```
 
@@ -16,13 +16,15 @@ interpret them without magic numbers, the SDK also exports a **decoder ring**:
 
 ```python
 from pocketrocks import (
-    ActionId,           # IntEnum: LOAN10, AUCTION1, ...
-    Suit,               # IntEnum: BRICK, WOOD, ORE, SHEEP, WHEAT
-    OBJECTIVES,         # dict[int, ObjectiveInfo]
+    ActionId,  # IntEnum: LOAN10, AUCTION1, ...
+    Suit,  # IntEnum: BRICK, WOOD, ORE, SHEEP, WHEAT
+    OBJECTIVES,  # dict[int, ObjectiveInfo]
     ObjectiveInfo,
-    SUIT_LABELS,        # dict[int, str]
+    SUIT_LABELS,  # dict[int, str]
     ACTION_DESCRIPTIONS,
-    describe_action, describe_suit, describe_objective,
+    describe_action,
+    describe_suit,
+    describe_objective,
     objective_payout,  # int payout for an objective id
 )
 ```
@@ -234,12 +236,20 @@ ids rather than raising.
 Exposed on the dataclasses for reference / type-checking:
 
 ```python
-decisionKind       = Literal["submitBid", "selectInfoToReveal"]
+decisionKind = Literal["submitBid", "selectInfoToReveal"]
 decisionActionKind = Literal["pass", "submitBid", "selectInfoToReveal"]
-runtimeEventKind   = Literal[
-    "connected", "disconnected", "connectionRejected", "connectionError",
-    "heartbeatReceived", "heartbeatSent", "requestQueued", "requestDropped",
-    "requestCompleted", "requestFailed", "malformedFrame",
+runtimeEventKind = Literal[
+    "connected",
+    "disconnected",
+    "connectionRejected",
+    "connectionError",
+    "heartbeatReceived",
+    "heartbeatSent",
+    "requestQueued",
+    "requestDropped",
+    "requestCompleted",
+    "requestFailed",
+    "malformedFrame",
 ]
 ```
 

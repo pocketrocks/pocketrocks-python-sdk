@@ -77,15 +77,15 @@ from pocketrocks.sim import LocalGame
 
 result = LocalGame(
     [MyBot(), OtherBot(), ThirdBot()],
-    seed=0,                     # anything hashable-as-string; same seed -> same game
+    seed=0,  # anything hashable-as-string; same seed -> same game
     value_chart="A",
     objectives_enabled=True,
     decision_budget_ms=60_000,
     record_decisions=False,
 ).play()
 
-print(result.ranking)   # seats, best to worst
-print(result.scores)    # one ScoreRow per seat
+print(result.ranking)  # seats, best to worst
+print(result.scores)  # one ScoreRow per seat
 ```
 
 `LocalGame` takes 3-5 bot instances and plays one seeded game synchronously
@@ -104,16 +104,16 @@ real server with realistic budgets before deploying.
 from pocketrocks.sim import run_games
 
 summary = run_games(
-    [MyBot, OtherBot, ThirdBot],   # see "providers" below
+    [MyBot, OtherBot, ThirdBot],  # see "providers" below
     n_games=500,
-    seeds=None,          # default: "game-0", "game-1", ... ; or pass your own
-    rotate_seats=True,   # rotate providers through seats so seat bias averages out
-    workers=1,           # >1 uses a process pool
+    seeds=None,  # default: "game-0", "game-1", ... ; or pass your own
+    rotate_seats=True,  # rotate providers through seats so seat bias averages out
+    workers=1,  # >1 uses a process pool
     value_chart="A",
     record_decisions=False,
     decision_budget_ms=60_000,
 )
-print(summary)   # win rate, mean score, and wins-by-seat per bot
+print(summary)  # win rate, mean score, and wins-by-seat per bot
 ```
 
 `run_games` plays `n_games` seeded `LocalGame`s and returns a
@@ -329,11 +329,11 @@ from pocketrocks import ActionId, Suit
 from pocketrocks.testing import scenario
 
 
-async def test_my_bot_bids_the_max():   # choose_decision is a coroutine
+async def test_my_bot_bids_the_max():  # choose_decision is a coroutine
     ctx = (
         scenario(players=3, starting_cash=20)
         .turn(ActionId.AUCTION1, resources=(Suit.BRICK, Suit.WOOD))
-        .auction(bids={0: 4, 1: 0, 2: 0})   # seat 0 wins for $4
+        .auction(bids={0: 4, 1: 0, 2: 0})  # seat 0 wins for $4
         .deciding(seat=1, hand=[Suit.BRICK, Suit.ORE], kind="submitBid")
         .to_context()
     )
@@ -349,25 +349,29 @@ To drive the whole runtime end-to-end, feed `.to_bytes()` through the shipped
 ```python
 from pocketrocks.testing import FakeTransport, decode_frames, scenario
 
-transport = FakeTransport([scenario(players=3, starting_cash=20)
-                           .deciding(seat=0, hand=[Suit.BRICK], kind="submitBid")
-                           .to_bytes()])
+transport = FakeTransport(
+    [
+        scenario(players=3, starting_cash=20)
+        .deciding(seat=0, hand=[Suit.BRICK], kind="submitBid")
+        .to_bytes()
+    ]
+)
 await MyBot(api_key="x", bot_id="y", reconnect=False, transport=transport).run_async()
-sent = decode_frames(transport.sent_messages)   # inspect what your bot replied
+sent = decode_frames(transport.sent_messages)  # inspect what your bot replied
 ```
 
 ---
 
 ## Bot API reference
 
-> **Full type reference:** [`TYPES.md`](TYPES.md) documents every public type
+> **Full type reference:** [`docs/TYPES.md`](docs/TYPES.md) documents every public type
 > — `PocketRocksBot`, `BotDecision`, `DecisionContext` (all fields), and
 > `RuntimeEvent`. The essentials are below.
 >
 > **Decoding the ids:** the context gives you raw action/suit/objective ids.
 > Use the `ActionId` / `Suit` / `OBJECTIVES` / `describe_*` helpers exported from
 > `pocketrocks` instead of magic numbers — full ID tables are in
-> [`MAPPINGS.md`](MAPPINGS.md).
+> [`docs/MAPPINGS.md`](docs/MAPPINGS.md).
 
 ### `choose_decision(context) -> BotDecision`
 
@@ -382,7 +386,7 @@ Called whenever the server needs a move. Return one of:
 Useful fields on `context` (`DecisionContext`): `decision_kind`
 (`"submitBid"` or `"selectInfoToReveal"`), `legal_max_amount`,
 `revealable_count`, `bot_seat`, `cash_by_seat`, `player_count`, and
-`remaining_deadline_ms`. See [`TYPES.md`](TYPES.md#decisioncontext) for every
+`remaining_deadline_ms`. See [`docs/TYPES.md`](docs/TYPES.md#decisioncontext) for every
 field with its type and meaning.
 
 ### Optional runtime hooks
@@ -454,15 +458,15 @@ You don't have to manage any of this — it's handled for you:
 ## Developing the SDK itself
 
 The rest of this section is **only** for people modifying this SDK — not for
-writing a bot (for that, use [`starter/`](starter/)).
+writing a bot (for that, use [`starter/`](starter/)). `uv` is the toolchain
+entry point for setup, tests, and linting — see
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contribution gate and
+[`docs/README.md`](docs/README.md) for the documentation hub.
 
 ```bash
 git clone git@github.com:jaiparera/pocketrocks-python-sdk.git
 cd pocketrocks-python-sdk
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"     # editable install with dev tools
-pytest                       # run the test suite
-ruff check . && mypy src     # lint + type-check
+uv sync --all-extras
 ```
 
 ### Vendored protocol package

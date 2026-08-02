@@ -1,0 +1,8 @@
+# Default owner for everything.
+*                       @jaiparera
+
+# The contract surfaces. Changes here reach every installed bot, since
+# develop's tip is what `pip install git+https://...` resolves to.
+/src/pocketrocks/_version.py    @jaiparera
+/src/pocketrocks/protocol.py    @jaiparera
+/.github/                       @jaiparera

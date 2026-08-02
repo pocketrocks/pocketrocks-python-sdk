@@ -140,9 +140,7 @@ class LocalGame:
         return decision.value or 0
 
     async def _ask_reveal(self, seat: int, bot: PocketRocksBot, turn_index: int) -> int:
-        decision, fallback, _context = await self._ask(
-            seat, bot, "selectInfoToReveal", turn_index
-        )
+        decision, fallback, _context = await self._ask(seat, bot, "selectInfoToReveal", turn_index)
         if (
             fallback is not None
             or decision is None

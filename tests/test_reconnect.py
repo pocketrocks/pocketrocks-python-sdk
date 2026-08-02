@@ -122,7 +122,10 @@ async def test_run_feeds_rejected_for_403_and_transient_for_network_error() -> N
     )
     policy = _RecordingPolicy()
     runtime = PocketRocksRuntime(
-        bot=bot, config=bot.config, transport=transport, policy=policy
+        bot=bot,
+        config=bot.config,
+        transport=transport,
+        policy=policy,  # type: ignore[arg-type]  # _RecordingPolicy is a deliberate duck-typed double, not a ReconnectPolicy subclass
     )
 
     task = asyncio.create_task(runtime.run())

@@ -79,8 +79,8 @@ Open [`bot.py`](bot.py) and edit the `choose_decision` method. That's the one
 function that decides how your bot plays. The three moves you can return:
 
 ```python
-BotDecision.pass_turn()                   # do nothing this turn
-BotDecision.submit_bid(amount)            # bid `amount`
+BotDecision.pass_turn()  # do nothing this turn
+BotDecision.submit_bid(amount)  # bid `amount`
 BotDecision.select_info_to_reveal(index)  # reveal a card
 ```
 

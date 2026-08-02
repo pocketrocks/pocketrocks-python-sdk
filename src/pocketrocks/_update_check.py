@@ -53,7 +53,8 @@ class StaleSDKWarning(UserWarning):
 
 
 def _fetch(url: str, timeout: float) -> bytes:
-    with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310
+    # URL is always the module-level _RAW_URL constant.
+    with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 — _RAW_URL
         return bytes(response.read())
 
 
@@ -103,8 +104,9 @@ def maybe_warn_if_stale(*, timeout: float = 1.0) -> None:
         if remote_version <= local_version and remote_rules <= RULES_VERSION:
             return
         rules_note = (
-            " This includes GAME RULES changes, so local sim results may not match the "
-            "live server." if remote_rules > RULES_VERSION else ""
+            " This includes GAME RULES changes, so local sim results may not match the live server."
+            if remote_rules > RULES_VERSION
+            else ""
         )
         warnings.warn(
             "A newer PocketRocks SDK is available ({remote}; you have {local}).{note} "

@@ -45,20 +45,14 @@ def test_batch_setup_matches_scalar_engine(
             player.hand_suits for player in scalar.players
         ]
         assert not batch.hand_cards[game_index, :, hand_size:].any()
-        assert batch.initial_info_counts[game_index].tolist() == list(
-            scalar.initial_info_counts
-        )
-        assert batch.cash[game_index].tolist() == [
-            player.cash for player in scalar.players
-        ]
+        assert batch.initial_info_counts[game_index].tolist() == list(scalar.initial_info_counts)
+        assert batch.cash[game_index].tolist() == [player.cash for player in scalar.players]
         assert int(batch.tiebreak_seats[game_index]) == scalar.tiebreak_seat
         assert batch.objective_ids[game_index][batch.objective_ids[game_index] > 0].tolist() == [
             objective_id for objective_id, _seat in scalar.active_objectives
         ]
         assert batch.upcoming[game_index].tolist() == scalar.upcoming
-        assert batch.won_counts[game_index].tolist() == [
-            [0, 0, 0, 0, 0] for _ in scalar.players
-        ]
+        assert batch.won_counts[game_index].tolist() == [[0, 0, 0, 0, 0] for _ in scalar.players]
         assert batch.revealed_counts[game_index].tolist() == [
             [0, 0, 0, 0, 0] for _ in scalar.players
         ]
@@ -102,19 +96,14 @@ def _assert_game_state_matches(
     assert batch.tiebreak_seats[game_index] == scalar.tiebreak_seat
     assert batch.upcoming[game_index][batch.upcoming[game_index] > 0].tolist() == scalar.upcoming
     assert batch.won_counts[game_index].tolist() == [
-        [player.won_suits.count(suit_id) for suit_id in range(1, 6)]
-        for player in scalar.players
+        [player.won_suits.count(suit_id) for suit_id in range(1, 6)] for player in scalar.players
     ]
     assert batch.revealed_counts[game_index].tolist() == [
         [player.revealed_suits.count(suit_id) for suit_id in range(1, 6)]
         for player in scalar.players
     ]
     assert [
-        tuple(
-            int(card)
-            for card in batch.hand_cards[game_index, seat]
-            if card > 0
-        )
+        tuple(int(card) for card in batch.hand_cards[game_index, seat] if card > 0)
         for seat in range(batch.player_count)
     ] == [tuple(player.hand_suits) for player in scalar.players]
     assert [
@@ -166,9 +155,9 @@ def test_batch_transitions_match_scalar_complete_games(player_count: int) -> Non
                 continue
             for seat in range(player_count):
                 assert int(legal_max[game_index, seat]) == scalar.legal_max_bid(seat)
-                bids[game_index, seat] = (
-                    (turn_index + 1) * (game_index + 2) * (seat + 3)
-                ) % (scalar.legal_max_bid(seat) + 8)
+                bids[game_index, seat] = ((turn_index + 1) * (game_index + 2) * (seat + 3)) % (
+                    scalar.legal_max_bid(seat) + 8
+                )
 
         batch_outcome = batch.resolve_bids(bids)
         reveal_indices = np.full(len(seeds), -1, dtype=np.int8)
@@ -179,9 +168,7 @@ def test_batch_transitions_match_scalar_complete_games(player_count: int) -> Non
             outcome = scalar.resolve(bids[game_index].tolist())
             assert int(batch_outcome.winner_seats[game_index]) == outcome.winner_seat
             assert int(batch_outcome.paid[game_index]) == outcome.paid
-            assert batch_outcome.effective_bids[game_index].tolist() == list(
-                outcome.effective_bids
-            )
+            assert batch_outcome.effective_bids[game_index].tolist() == list(outcome.effective_bids)
             expected_mode = {"auto": 1, "choice": 2, None: 0}[outcome.reveal_needed]
             assert int(batch_outcome.reveal_modes[game_index]) == expected_mode
             if outcome.reveal_needed == "auto":
@@ -206,18 +193,14 @@ def test_batch_transitions_match_scalar_complete_games(player_count: int) -> Non
     for game_index, scalar in enumerate(scalars):
         scalar_rows = scalar.score()
         assert scores.cash[game_index].tolist() == [row.cash for row in scalar_rows]
-        assert scores.items[game_index].tolist() == [
-            row.items_value for row in scalar_rows
-        ]
+        assert scores.items[game_index].tolist() == [row.items_value for row in scalar_rows]
         assert scores.objectives[game_index].tolist() == [
             row.objectives_value for row in scalar_rows
         ]
         assert scores.investments[game_index].tolist() == [
             row.investments_value for row in scalar_rows
         ]
-        assert scores.loans[game_index].tolist() == [
-            row.loans_value for row in scalar_rows
-        ]
+        assert scores.loans[game_index].tolist() == [row.loans_value for row in scalar_rows]
         assert scores.total[game_index].tolist() == [row.total for row in scalar_rows]
         assert rankings[game_index].tolist() == scalar.ranking()
 

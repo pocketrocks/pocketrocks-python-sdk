@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pocketrocks.internal.bot_wire_v2 import GameSetupEvent
 from pocketrocks.sim.constants import (
@@ -18,13 +18,18 @@ _FIXTURES = Path(__file__).parent.parent / "fixtures" / "botsdk"
 
 
 def _trace(name: str) -> dict[str, Any]:
-    return json.loads((_FIXTURES / "traces" / f"{name}.json").read_text())
+    return cast("dict[str, Any]", json.loads((_FIXTURES / "traces" / f"{name}.json").read_text()))
 
 
 def test_action_deck_composition() -> None:
     assert len(ACTION_DECK) == 30
     assert Counter(ACTION_DECK) == {
-        "Auction1": 12, "Auction2": 8, "Loan10": 3, "Loan20": 2, "Invest5": 3, "Invest10": 2,
+        "Auction1": 12,
+        "Auction2": 8,
+        "Loan10": 3,
+        "Loan20": 2,
+        "Invest5": 3,
+        "Invest10": 2,
     }
     # Order matters for shuffle parity: type-grouped, matching createActionDeck().
     assert ACTION_DECK[:12] == ("Auction1",) * 12
@@ -32,7 +37,7 @@ def test_action_deck_composition() -> None:
 
 
 def test_item_deck_order() -> None:
-    assert ITEM_DECK_SUITS == tuple(s for s in (1, 2, 3, 4, 5) for _ in range(6))
+    assert tuple(s for s in (1, 2, 3, 4, 5) for _ in range(6)) == ITEM_DECK_SUITS
 
 
 def test_value_charts() -> None:
@@ -44,19 +49,20 @@ def test_value_charts() -> None:
 
 
 def test_objective_patterns() -> None:
-    assert objective_pattern_met(1, [2, 0, 0, 0, 0])          # any pair
+    assert objective_pattern_met(1, [2, 0, 0, 0, 0])  # any pair
     assert not objective_pattern_met(1, [1, 1, 1, 1, 1])
-    assert objective_pattern_met(5, [2, 2, 0, 0, 0])          # two pairs
-    assert objective_pattern_met(6, [2, 0, 0, 0, 0])          # pair of suit 1
+    assert objective_pattern_met(5, [2, 2, 0, 0, 0])  # two pairs
+    assert objective_pattern_met(6, [2, 0, 0, 0, 0])  # pair of suit 1
     assert not objective_pattern_met(6, [0, 2, 0, 0, 0])
-    assert objective_pattern_met(21, [1, 1, 1, 0, 0])         # set 1-2-3
+    assert objective_pattern_met(21, [1, 1, 1, 0, 0])  # set 1-2-3
 
 
 def test_setup_matches_ts_trace() -> None:
     trace = _trace("trace-000")
     setup = trace["setup"]
-    engine = SimEngine(int(trace["playerCount"]), str(trace["seed"]),
-                       value_chart=str(trace["valueChartKey"]))
+    engine = SimEngine(
+        int(trace["playerCount"]), str(trace["seed"]), value_chart=str(trace["valueChartKey"])
+    )
     assert engine.debug_item_deck_order == tuple(setup["itemDeckOrder"])
     assert engine.debug_action_deck_order == tuple(setup["actionDeckOrder"])
     assert [p.hand_suits for p in engine.players] == setup["handsBySeat"]

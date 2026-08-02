@@ -66,12 +66,10 @@ SUIT_LABELS: dict[int, str] = {suit.value: suit.label for suit in Suit}
 #: Action id (1-6) -> plain-English description of what winning it does.
 ACTION_DESCRIPTIONS: dict[int, str] = {
     ActionId.AUCTION1: (
-        "Auction for 1 resource card. The winner pays their bid and gains the "
-        "offered resource."
+        "Auction for 1 resource card. The winner pays their bid and gains the offered resource."
     ),
     ActionId.AUCTION2: (
-        "Auction for 2 resource cards. The winner pays their bid and gains both "
-        "offered resources."
+        "Auction for 2 resource cards. The winner pays their bid and gains both offered resources."
     ),
     ActionId.LOAN10: (
         "Loan 10. The winner pays their bid now, immediately gains $10 cash, and "
@@ -82,12 +80,10 @@ ACTION_DESCRIPTIONS: dict[int, str] = {
         "repays $20 during scoring."
     ),
     ActionId.INVEST5: (
-        "Invest 5. The winner locks their winning bid and gets it back plus $5 "
-        "during scoring."
+        "Invest 5. The winner locks their winning bid and gets it back plus $5 during scoring."
     ),
     ActionId.INVEST10: (
-        "Invest 10. The winner locks their winning bid and gets it back plus $10 "
-        "during scoring."
+        "Invest 10. The winner locks their winning bid and gets it back plus $10 during scoring."
     ),
 }
 
@@ -143,9 +139,7 @@ def _describe(definition: dict[str, object]) -> str:
         return _PATTERN_DESCRIPTIONS[pattern]
     requirement = cast("list[int]", definition["requirement"])
     parts = [
-        f"{count}x {Suit(index + 1).label}"
-        for index, count in enumerate(requirement)
-        if count
+        f"{count}x {Suit(index + 1).label}" for index, count in enumerate(requirement) if count
     ]
     return " + ".join(parts)
 
@@ -214,11 +208,15 @@ def objective_payout(objective_id: int) -> int | None:
 
 # Guard against the enums drifting from the vendored wire ids. This is cheap and
 # only runs once at import; it fails loudly if the protocol renumbers actions.
-assert {action.value for action in ActionId} == set(bot_wire_action_ids.values())
+# A plain `assert` would vanish under `python -O`, silently disabling the guard
+# it exists to provide, so raise explicitly instead.
+if {action.value for action in ActionId} != set(bot_wire_action_ids.values()):
+    raise AssertionError("ActionId enum values drifted from the vendored wire ids")
 
 # Guard the payout mapping too: if upstream adds/reshapes objectives, the known
 # distribution changes and this trips instead of silently mis-scoring.
 _PAYOUT_DISTRIBUTION: dict[int, int] = {}
 for _info in OBJECTIVES.values():
     _PAYOUT_DISTRIBUTION[_info.payout] = _PAYOUT_DISTRIBUTION.get(_info.payout, 0) + 1
-assert _PAYOUT_DISTRIBUTION == {5: 17, 10: 12, 15: 1}
+if _PAYOUT_DISTRIBUTION != {5: 17, 10: 12, 15: 1}:
+    raise AssertionError(f"objective payout distribution changed: {_PAYOUT_DISTRIBUTION}")

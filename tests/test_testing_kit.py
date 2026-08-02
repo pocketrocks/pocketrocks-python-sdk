@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from pocketrocks import ActionId, BotDecision, DecisionContext, PocketRocksBot, Suit
+from pocketrocks.internal.bot_wire_v2 import DecisionResponse
 from pocketrocks.testing import FakeTransport, decode_frames, heartbeat_bytes, scenario
 
 
@@ -90,5 +91,7 @@ async def test_scenario_bytes_drive_a_full_runtime_round_trip() -> None:
 
     sent = decode_frames(transport.sent_messages)
     assert [frame.kind for frame in sent] == ["heartbeatResponse", "decisionResponse"]
-    assert sent[1].action_kind == "submitBid"
-    assert sent[1].value == 20  # no auction resolved -> legal max is full starting cash
+    decision_response = sent[1]
+    assert isinstance(decision_response, DecisionResponse)
+    assert decision_response.action_kind == "submitBid"
+    assert decision_response.value == 20  # no auction resolved -> legal max is full starting cash
