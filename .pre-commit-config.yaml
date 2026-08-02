@@ -1,10 +1,13 @@
 # Commit-time gate. Deliberately cheap: everything here is staged-scoped or
 # near-instant. There is no pre-push hook — CI re-runs `pre-commit run
 # --all-files`, so a contributor who skips `pre-commit install` still gets
-# these file-content hooks caught, with two exceptions: `conventional-pre-commit`
+# these file-content hooks caught, with three exceptions: `conventional-pre-commit`
 # is `commit-msg`-stage and never runs in CI's `pre-commit`-stage pass (the
-# squash-merged PR title is what CI actually enforces), and `no-commit-to-branch`
-# is SKIPped in CI because a push leaves HEAD on `develop` legitimately.
+# squash-merged PR title is what CI actually enforces); `no-commit-to-branch`
+# is SKIPped in CI because a push leaves HEAD on `develop` legitimately; and
+# `gitleaks` scans only the staged diff, which is empty in a clean CI
+# checkout, so CI's `pre-commit` rerun doesn't actually catch it — a separate
+# `secret-scan` job in ci.yml does, by scanning committed history instead.
 #
 # `rev` values are managed by `uv run pre-commit autoupdate`.
 default_install_hook_types: [pre-commit, commit-msg]
@@ -20,9 +23,13 @@ repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.0
     hooks:
-      # Local secret scanning is best-effort by nature; the `lint` job in CI
-      # re-runs this via `pre-commit run --all-files`, so `--no-verify`
-      # cannot bypass it.
+      # `--staged` (this hook's default entry) scans only the staged diff,
+      # which is correct here but a no-op in CI's `lint` job: a CI checkout
+      # has a clean tree with nothing staged, so `pre-commit run --all-files`
+      # there always passes regardless of what's in history. The `secret-scan`
+      # job in ci.yml is what actually re-checks this in CI, scanning
+      # committed history instead — that is what makes `--no-verify`
+      # unable to land a secret.
       - id: gitleaks
 
   - repo: https://github.com/compilerla/conventional-pre-commit

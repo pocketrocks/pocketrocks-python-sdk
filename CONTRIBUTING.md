@@ -47,8 +47,10 @@ type checking, docs policy) run in CI, which has no minute budget to protect.
 
 **Hooks are a convenience, not the enforcer.** CI runs
 `uv run pre-commit run --all-files`, so if you never install the hooks, nothing
-you push gets a free pass — you just find out later. Run the gate by hand any
-time:
+you push gets a free pass on formatting, lint, or hygiene — you just find out
+later. The one exception is `gitleaks`: it's staged-scoped by design (see
+below), so CI's `pre-commit` pass can't re-check it — a separate `secret-scan`
+CI job does that instead. Run the gate by hand any time:
 
 ```bash
 uv run pre-commit run --all-files
@@ -64,8 +66,12 @@ uv run pytest                       # test suite
 
 `gitleaks` needs no local install: `pre-commit` builds it itself the first
 time it runs, from its own bundled Go toolchain, independent of whatever `go`
-or `gitleaks` you do or don't have on `PATH`. CI runs the identical check on
-every push, so there's no path where it quietly gets skipped.
+or `gitleaks` you do or don't have on `PATH`. The local hook only scans
+*staged* content, though, so it can't be the thing CI relies on — a clean CI
+checkout has nothing staged. A separate `secret-scan` job in `ci.yml` scans
+the actual committed git history on every push, pinned to the same gitleaks
+version as this file's hook `rev`, so `git commit --no-verify` still can't
+land a secret undetected.
 
 ## Commits and PR titles
 

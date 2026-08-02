@@ -76,6 +76,42 @@ jobs:
       - name: Pytest
         run: uv run --no-sync pytest
 
+  secret-scan:
+    name: Secret scan (committed history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Keep in step with the gitleaks `rev` in .pre-commit-config.yaml so
+      # CI and the local hook agree on what counts as a leak.
+      GITLEAKS_VERSION: 8.30.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history, not a shallow clone: a shallow checkout only has
+          # the tip commit, so a secret introduced and later removed a few
+          # commits back would be invisible to the scan below.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # The pre-commit gitleaks hook (see .pre-commit-config.yaml) runs
+      # `--staged`, which is correct for a local commit-time check but scans
+      # only the staged diff. In CI the checkout has a clean tree with
+      # nothing staged, so `pre-commit run --all-files` in the `lint` job
+      # scans an empty diff and always passes — it does not re-check
+      # anything here. This job scans the actual committed git history
+      # instead, so `git commit --no-verify` cannot land a secret.
+      - name: Scan committed history for secrets
+        run: gitleaks git --redact --verbose .
+
   lint:
     name: Lint and format
     runs-on: ubuntu-latest
@@ -127,7 +163,7 @@ jobs:
     name: CI OK
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [lint, check, floors]
+    needs: [lint, check, floors, secret-scan]
     if: always()
     steps:
       - name: Verify all jobs succeeded
