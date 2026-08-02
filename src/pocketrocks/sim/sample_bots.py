@@ -23,7 +23,7 @@ class RandomBot(PocketRocksBot):
 
     def __init__(self, seed: int = 0) -> None:
         super().__init__()
-        self._rng = random.Random(seed)
+        self._rng = random.Random(seed)  # noqa: S311 -- reproducible sim RNG, not security-sensitive
 
     async def choose_decision(self, context: DecisionContext) -> BotDecision:
         if context.decision_kind == "submitBid":
@@ -51,7 +51,7 @@ class GreedyValueBot(PocketRocksBot):
 
 
 class ValueTraderBot(PocketRocksBot):
-    """Chases resources whose suits it holds info about; conserves cash otherwise."""
+    """Prices offered resources from the active chart and known information."""
 
     async def choose_decision(self, context: DecisionContext) -> BotDecision:
         if context.decision_kind != "submitBid":
@@ -61,12 +61,21 @@ class ValueTraderBot(PocketRocksBot):
                 return BotDecision.select_info_to_reveal(0)
             favorite = max(set(hand), key=lambda suit: sum(1 for s in hand if s == suit))
             return BotDecision.select_info_to_reveal(hand.index(favorite))
-        matches = sum(
-            1
-            for suit_id in context.current_resource_ids
-            if suit_id and suit_id in context.current_hand_suit_ids
-        )
-        if matches == 0:
-            return BotDecision.submit_bid(0)
+        known_counts = list(context.revealed_info_counts_by_suit)
+        for suit_id in context.current_hand_suit_ids:
+            known_counts[suit_id - 1] += 1
+
+        estimated_value = 0
+        resource_count = 0
+        for suit_id in context.current_resource_ids:
+            if not suit_id:
+                continue
+            known_count = min(known_counts[suit_id - 1], len(context.value_chart) - 1)
+            estimated_value += context.value_chart[known_count]
+            resource_count += 1
+
         cash = context.cash_by_seat[context.bot_seat]
-        return BotDecision.submit_bid(min(context.legal_max_amount or 0, matches * cash // 3))
+        cash_budget = resource_count * cash // 3
+        return BotDecision.submit_bid(
+            min(context.legal_max_amount or 0, estimated_value, cash_budget)
+        )

@@ -27,7 +27,7 @@ def test_suit_values_and_labels() -> None:
 def test_action_ids_match_wire_protocol() -> None:
     # The public enum must not drift from the vendored wire ids.
     assert {a.value for a in ActionId} == set(bot_wire_action_ids.values())
-    assert ActionId.LOAN10 == bot_wire_action_ids["Loan10"]
+    assert bot_wire_action_ids["Loan10"] == ActionId.LOAN10
 
 
 def test_describe_action_is_human_readable() -> None:

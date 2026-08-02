@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # Python deps. Fully enabled — unlike the pocketrocks monorepo, there is no
+  # release freeze here and CI minutes are not a constraint.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Dependabot updates each ecosystem independently, so this doesn't keep
+  # .pre-commit-config.yaml in step with uv.lock — ruff, for example, is
+  # pinned in both places and the two can still drift apart. What this entry
+  # does buy: without it, hook revs here would never be bumped at all, while
+  # uv.lock's ruff keeps moving on its own schedule.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      pre-commit:
+        patterns:
+          - "*"

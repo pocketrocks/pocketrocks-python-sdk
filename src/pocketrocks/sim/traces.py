@@ -96,9 +96,12 @@ def replay_trace(trace: dict[str, Any]) -> None:
     for expected in trace["finalScores"]:
         row = rows[int(expected["seat"])]
         for field_name, key in (
-            ("cash", "cash"), ("items_value", "itemsValue"),
-            ("objectives_value", "objectivesValue"), ("investments_value", "investmentsValue"),
-            ("loans_value", "loansValue"), ("total", "total"),
+            ("cash", "cash"),
+            ("items_value", "itemsValue"),
+            ("objectives_value", "objectivesValue"),
+            ("investments_value", "investmentsValue"),
+            ("loans_value", "loansValue"),
+            ("total", "total"),
         ):
             assert getattr(row, field_name) == expected[key], (
                 f"{label} seat {expected['seat']}: {key}"

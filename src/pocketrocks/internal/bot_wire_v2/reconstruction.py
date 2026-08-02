@@ -58,9 +58,8 @@ def reconstruct_decision_context(request: DecisionRequest) -> ReconstructedDecis
                     if suit_id:
                         won[winner][suit_id - 1] += 1
                 for objective_id in setup.objective_ids:
-                    if (
-                        not any(objective_id in ids for ids in owned)
-                        and _objective_is_met(objective_id, won[winner])
+                    if not any(objective_id in ids for ids in owned) and _objective_is_met(
+                        objective_id, won[winner]
                     ):
                         owned[winner].append(objective_id)
             tiebreak = winner

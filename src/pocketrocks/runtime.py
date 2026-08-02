@@ -182,7 +182,9 @@ class PocketRocksRuntime:
             frame_received_at = now_ms()
             try:
                 frame = decode_frame(payload)
-            except Exception as error:
+            # Deliberately broad: any decode failure must be reported to the bot and
+            # the read loop kept alive rather than propagated and killing the runtime.
+            except Exception as error:  # noqa: BLE001
                 logger.warning("dropping malformed frame: %s", error)
                 await self.bot.on_runtime_event(
                     RuntimeEvent(kind="malformedFrame", details={"error": str(error)})
@@ -280,7 +282,10 @@ class PocketRocksRuntime:
                     "request %s timed out before the bot returned a decision", frame.request_id
                 )
                 await self._emit_drop_event(frame, "deadline_expired", frame.deadline_at - now_ms())
-            except Exception as error:
+            # Deliberately broad: this wraps a call into arbitrary bot code
+            # (choose_decision), which can raise anything. One bad decision must not
+            # kill the worker; report it and keep processing the queue.
+            except Exception as error:  # noqa: BLE001
                 logger.warning("request %s failed: %s", frame.request_id, error)
                 await self.bot.on_runtime_event(
                     RuntimeEvent(

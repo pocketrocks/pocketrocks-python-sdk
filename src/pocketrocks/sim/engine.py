@@ -1,15 +1,11 @@
-"""Local rules engine: a line-for-line mirror of ``apps/server/src/rules/*``.
-
-The engine is a pure state machine — no async, no timers, no I/O. It emits the
-same wire events the live server emits, so contexts built over them (Task 7 /
-``context.py``) are identical to live ones by construction. Golden traces
-exported from the TS engine pin its behavior (``tests/sim/test_conformance.py``).
-"""
+"""Scalar compatibility facade over the canonical vectorized rules engine."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+
+import numpy as np
 
 from pocketrocks.internal.bot_wire_v2 import (
     AuctionResolvedEvent,
@@ -19,22 +15,17 @@ from pocketrocks.internal.bot_wire_v2 import (
     TurnOpenedEvent,
 )
 
+from .batch_engine import BatchSimEngine
 from .constants import (
-    ACTION_DECK,
     ACTION_WIRE_IDS,
-    ALL_OBJECTIVE_WIRE_IDS,
-    INFO_CARDS_PER_PLAYER,
     INVEST_PAYOUT,
-    ITEM_DECK_SUITS,
     LOAN_PRINCIPAL,
     OBJECTIVE_PAYOUTS,
-    OBJECTIVES_PER_GAME,
     STARTING_CASH,
-    VALUE_CHARTS,
-    objective_pattern_met,
 )
-from .rng import shuffled
 from .state import PlayerSim, RevealRecord, ScoreRow, TurnRecord
+
+_ACTION_BY_WIRE_ID = {wire_id: action for action, wire_id in ACTION_WIRE_IDS.items()}
 
 
 @dataclass(frozen=True)
@@ -44,10 +35,12 @@ class TurnOutcome:
     effective_bids: tuple[int, ...]
     bundle_suits: tuple[int, ...]
     claimed_objective_wire_ids: tuple[int, ...]
-    reveal_needed: str | None  # "choice" | "auto" | None
+    reveal_needed: str | None
 
 
 class SimEngine:
+    """The established scalar API, backed by a size-one ``BatchSimEngine``."""
+
     def __init__(
         self,
         player_count: int,
@@ -57,54 +50,51 @@ class SimEngine:
         objectives_enabled: bool = True,
         player_names: Sequence[str] | None = None,
     ) -> None:
-        if not 3 <= player_count <= 5:
-            raise ValueError("PocketRocks supports 3-5 players")
-        if value_chart not in VALUE_CHARTS:
-            raise ValueError(f"unknown value chart {value_chart!r} (expected A-E)")
-        names = list(player_names) if player_names is not None else [
-            f"Bot {seat}" for seat in range(player_count)
-        ]
+        names = (
+            list(player_names)
+            if player_names is not None
+            else [f"Bot {seat}" for seat in range(player_count)]
+        )
         if len(names) != player_count:
             raise ValueError("player_names length must match player_count")
-
+        self._batch = BatchSimEngine.start(
+            player_count=player_count,
+            seeds=(seed,),
+            value_charts=(value_chart,),
+            objectives_enabled=(objectives_enabled,),
+        )
         self.seed = seed
         self.value_chart_key = value_chart
-        self.value_chart: tuple[int, ...] = VALUE_CHARTS[value_chart]
-
-        item_deck = shuffled(ITEM_DECK_SUITS, seed)
-        self.debug_item_deck_order: tuple[int, ...] = tuple(item_deck)
-        per_player = INFO_CARDS_PER_PLAYER[player_count]
-        dealt = item_deck[: player_count * per_player]
-        starting_cash = STARTING_CASH[player_count]
-        self.players: list[PlayerSim] = [
+        self.value_chart = tuple(int(value) for value in self._batch.value_charts[0])
+        self.debug_item_deck_order = tuple(int(card) for card in self._batch.item_decks[0])
+        self.debug_action_deck_order = tuple(
+            _ACTION_BY_WIRE_ID[int(action)] for action in self._batch.action_decks[0]
+        )
+        self.initial_info_counts = tuple(int(count) for count in self._batch.initial_info_counts[0])
+        self.players = [
             PlayerSim(
                 seat=seat,
                 name=names[seat],
-                cash=starting_cash,
-                hand_suits=dealt[seat * per_player : (seat + 1) * per_player],
+                cash=int(self._batch.cash[0, seat]),
+                hand_suits=[int(card) for card in self._batch.hand_cards[0, seat] if card > 0],
             )
             for seat in range(player_count)
         ]
-        counts = [0] * 5
-        for suit in dealt:
-            counts[suit - 1] += 1
-        self.initial_info_counts: tuple[int, ...] = tuple(counts)
-
-        self.pile: list[int] = item_deck[player_count * per_player :]
-        self.upcoming: list[int] = []
-        self._refill_upcoming()
-
-        self.action_deck: list[str] = shuffled(ACTION_DECK, seed)
-        self.debug_action_deck_order: tuple[str, ...] = tuple(self.action_deck)
-
-        self.tiebreak_seat: int = shuffled(list(range(player_count)), seed)[0]
-        selected = (
-            shuffled(list(ALL_OBJECTIVE_WIRE_IDS), seed)[:OBJECTIVES_PER_GAME]
-            if objectives_enabled
-            else []
-        )
-        self.active_objectives: list[tuple[int, int | None]] = [(oid, None) for oid in selected]
-
+        self.upcoming = [int(card) for card in self._batch.upcoming[0] if card > 0]
+        self.pile = [
+            int(card)
+            for card in self._batch.resource_decks[
+                0,
+                int(self._batch.resource_positions[0]) :,
+            ]
+        ]
+        self.action_deck = list(self.debug_action_deck_order)
+        self.tiebreak_seat = int(self._batch.tiebreak_seats[0])
+        self.active_objectives: list[tuple[int, int | None]] = [
+            (int(objective_id), None)
+            for objective_id in self._batch.objective_ids[0]
+            if objective_id > 0
+        ]
         self.current_action: str | None = None
         self.turn_index = 0
         self.history: list[TurnRecord] = []
@@ -112,46 +102,118 @@ class SimEngine:
             GameSetupEvent(
                 kind="gameSetup",
                 player_count=player_count,
-                starting_cash=starting_cash,
+                starting_cash=STARTING_CASH[player_count],
                 value_chart=self.value_chart,  # type: ignore[arg-type]
                 initial_tiebreak_seat=self.tiebreak_seat,
-                objective_ids=tuple(oid for oid, _ in self.active_objectives),
+                objective_ids=tuple(objective_id for objective_id, _ in self.active_objectives),
             )
         ]
 
-    def _refill_upcoming(self) -> None:
-        while len(self.upcoming) < 2 and self.pile:
-            self.upcoming.append(self.pile.pop(0))
-
-    # --- turn mechanics (mirrors rules/turns.ts) ---
-
     @property
     def game_over(self) -> bool:
-        no_items = not self.upcoming and not self.pile
-        return no_items or not self.action_deck
+        return (not self.upcoming and not self.pile) or not self.action_deck
+
+    def _sync_to_batch(self) -> None:
+        batch = self._batch
+        batch.cash[0] = [player.cash for player in self.players]
+        batch.hand_cards[0].fill(0)
+        for seat, player in enumerate(self.players):
+            batch.hand_cards[0, seat, : len(player.hand_suits)] = player.hand_suits
+            for suit_id in range(1, 6):
+                batch.won_counts[0, seat, suit_id - 1] = player.won_suits.count(suit_id)
+                batch.revealed_counts[0, seat, suit_id - 1] = player.revealed_suits.count(suit_id)
+            batch.loan_principal[0, seat] = sum(player.loans)
+            batch.investment_values[0, seat] = sum(
+                locked + payout for locked, payout in player.investments
+            )
+        batch.owned_objectives[0].fill(False)
+        for seat, player in enumerate(self.players):
+            for objective_id in player.objective_wire_ids:
+                batch.owned_objectives[0, seat, objective_id - 1] = True
+        batch.initial_info_counts[0] = self.initial_info_counts
+        batch.tiebreak_seats[0] = self.tiebreak_seat
+        batch.objective_ids[0].fill(0)
+        batch.objective_claimants[0].fill(-1)
+        for index, (objective_id, claimant) in enumerate(self.active_objectives):
+            batch.objective_ids[0, index] = objective_id
+            batch.objective_claimants[0, index] = -1 if claimant is None else claimant
+
+        batch.upcoming[0].fill(0)
+        batch.upcoming[0, : len(self.upcoming)] = self.upcoming
+        batch.resource_decks[0].fill(0)
+        batch.resource_decks[0, : len(self.pile)] = self.pile
+        batch.resource_positions[0] = 0
+        batch.resource_limits[0] = len(self.pile)
+
+        batch.action_decks[0].fill(0)
+        encoded_actions = [ACTION_WIRE_IDS[action] for action in self.action_deck]
+        batch.action_decks[0, : len(encoded_actions)] = encoded_actions
+        batch.action_positions[0] = 0
+        batch.action_limits[0] = len(encoded_actions)
+        batch.current_actions[0] = (
+            0 if self.current_action is None else ACTION_WIRE_IDS[self.current_action]
+        )
+        batch.turn_indices[0] = self.turn_index
+
+    def _sync_from_batch(self) -> None:
+        batch = self._batch
+        for seat, player in enumerate(self.players):
+            player.cash = int(batch.cash[0, seat])
+            player.hand_suits[:] = [int(card) for card in batch.hand_cards[0, seat] if card > 0]
+        self.tiebreak_seat = int(batch.tiebreak_seats[0])
+        self.upcoming[:] = [int(card) for card in batch.upcoming[0] if card > 0]
+        resource_position = int(batch.resource_positions[0])
+        resource_limit = int(batch.resource_limits[0])
+        self.pile[:] = [
+            int(card) for card in batch.resource_decks[0, resource_position:resource_limit]
+        ]
+        action_position = int(batch.action_positions[0])
+        action_limit = int(batch.action_limits[0])
+        self.action_deck[:] = [
+            _ACTION_BY_WIRE_ID[int(action)]
+            for action in batch.action_decks[0, action_position:action_limit]
+            if action > 0
+        ]
+        current_action_id = int(batch.current_actions[0])
+        self.current_action = (
+            None if current_action_id == 0 else _ACTION_BY_WIRE_ID[current_action_id]
+        )
+        self.turn_index = int(batch.turn_indices[0])
+        self.active_objectives[:] = [
+            (
+                int(objective_id),
+                (
+                    None
+                    if batch.objective_claimants[0, index] < 0
+                    else int(batch.objective_claimants[0, index])
+                ),
+            )
+            for index, objective_id in enumerate(batch.objective_ids[0])
+            if objective_id > 0
+        ]
 
     def flip_action(self) -> str | None:
         if self.game_over:
             self.current_action = None
             return None
-        action = self.action_deck.pop(0)
-        self.current_action = action
-        first = self.upcoming[0] if len(self.upcoming) > 0 else 0
+        self._sync_to_batch()
+        action_id = int(self._batch.flip_actions()[0])
+        self._sync_from_batch()
+        action = _ACTION_BY_WIRE_ID[action_id]
+        first = self.upcoming[0] if self.upcoming else 0
         second = self.upcoming[1] if len(self.upcoming) > 1 else 0
         self.events.append(
             TurnOpenedEvent(
                 kind="turnOpened",
-                action_id=ACTION_WIRE_IDS[action],
+                action_id=action_id,
                 resource_ids=(first, second),
             )
         )
         return action
 
     def legal_max_bid(self, seat: int) -> int:
-        cash = self.players[seat].cash
-        if self.current_action in LOAN_PRINCIPAL:
-            return cash + LOAN_PRINCIPAL[self.current_action]
-        return cash
+        self._sync_to_batch()
+        return int(self._batch.legal_max_bids()[0, seat])
 
     def resolve(self, raw_bids: Sequence[int]) -> TurnOutcome:
         action = self.current_action
@@ -159,78 +221,54 @@ class SimEngine:
             raise RuntimeError("resolve() called with no flipped action")
         if len(raw_bids) != len(self.players):
             raise ValueError("one bid per seat required")
-        effective = tuple(
-            max(0, min(int(raw), self.legal_max_bid(seat)))
-            for seat, raw in enumerate(raw_bids)
-        )
         upcoming_before = tuple(self.upcoming)
-
-        # Winner: highest bid; ties scan clockwise starting AFTER the leader,
-        # leader last (rules/turns.ts resolveAuction).
-        highest = max(effective)
-        seat_count = len(self.players)
-        winner_seat = next(
-            (self.tiebreak_seat + offset) % seat_count
-            for offset in range(1, seat_count + 1)
-            if effective[(self.tiebreak_seat + offset) % seat_count] == highest
+        objectives_before = {
+            objective_id
+            for objective_id, claimant in self.active_objectives
+            if claimant is not None
+        }
+        self._sync_to_batch()
+        result = self._batch.resolve_bids(np.asarray([raw_bids], dtype=np.int64))
+        winner = int(result.winner_seats[0])
+        paid = int(result.paid[0])
+        effective = tuple(int(value) for value in result.effective_bids[0])
+        self._sync_from_batch()
+        if action in LOAN_PRINCIPAL:
+            self.players[winner].loans.append(LOAN_PRINCIPAL[action])
+        elif action in INVEST_PAYOUT:
+            self.players[winner].investments.append((paid, INVEST_PAYOUT[action]))
+        claimed = tuple(
+            objective_id
+            for objective_id, claimant in self.active_objectives
+            if claimant == winner and objective_id not in objectives_before
         )
-        winner = self.players[winner_seat]
-        winner.cash -= highest
-        self.tiebreak_seat = winner_seat
-
-        bundle: list[int] = []
-        claimed: list[int] = []
-        if action in ("Auction1", "Auction2"):
-            grants = 1 if action == "Auction1" else 2
-            for _ in range(grants):
-                if self.upcoming:
-                    suit = self.upcoming.pop(0)
-                    bundle.append(suit)
-                    winner.won_suits.append(suit)
-            counts = [0] * 5
-            for suit in winner.won_suits:
-                counts[suit - 1] += 1
-            for index, (oid, claimed_by) in enumerate(self.active_objectives):
-                if claimed_by is None and objective_pattern_met(oid, counts):
-                    self.active_objectives[index] = (oid, winner_seat)
-                    winner.objective_wire_ids.append(oid)
-                    claimed.append(oid)
-        elif action in LOAN_PRINCIPAL:
-            principal = LOAN_PRINCIPAL[action]
-            winner.cash += principal
-            winner.loans.append(principal)
-        else:  # Invest5 / Invest10
-            winner.investments.append((highest, INVEST_PAYOUT[action]))
-
-        self.events.append(
-            AuctionResolvedEvent(kind="auctionResolved", bids_by_seat=effective)
-        )
-        self._refill_upcoming()
-
-        hand_size = len(winner.hand_suits)
-        reveal_needed = "choice" if hand_size > 1 else ("auto" if hand_size == 1 else None)
+        grants = 1 if action == "Auction1" else (2 if action == "Auction2" else 0)
+        bundle = upcoming_before[:grants]
+        self.players[winner].won_suits.extend(bundle)
+        self.players[winner].objective_wire_ids.extend(claimed)
+        self.events.append(AuctionResolvedEvent(kind="auctionResolved", bids_by_seat=effective))
+        mode = int(result.reveal_modes[0])
+        reveal_needed = {0: None, 1: "auto", 2: "choice"}[mode]
         self.history.append(
             TurnRecord(
-                turn_index=self.turn_index,
+                turn_index=self.turn_index - 1,
                 action=action,
                 upcoming_before=upcoming_before,
                 raw_bids=tuple(int(raw) for raw in raw_bids),
                 effective_bids=effective,
-                winner_seat=winner_seat,
-                paid=highest,
-                bundle_suits=tuple(bundle),
-                claimed_objective_wire_ids=tuple(claimed),
+                winner_seat=winner,
+                paid=paid,
+                bundle_suits=bundle,
+                claimed_objective_wire_ids=claimed,
                 reveal=None,
             )
         )
-        self.turn_index += 1
-        self.current_action = None
         return TurnOutcome(
-            winner_seat=winner_seat,
-            paid=highest,
+            winner_seat=winner,
+            paid=paid,
             effective_bids=effective,
-            bundle_suits=tuple(bundle),
-            claimed_objective_wire_ids=tuple(claimed),
+            bundle_suits=bundle,
+            claimed_objective_wire_ids=claimed,
             reveal_needed=reveal_needed,
         )
 
@@ -243,38 +281,42 @@ class SimEngine:
         if not player.hand_suits:
             raise RuntimeError("apply_reveal() on an empty hand")
         index = hand_index if 0 <= hand_index < len(player.hand_suits) else 0
-        suit = player.hand_suits.pop(index)
+        suit = player.hand_suits[index]
+        self._sync_to_batch()
+        self._batch.pending_reveal_seats[0] = seat
+        self._batch.apply_reveals(np.asarray([index], dtype=np.int16))
+        self._sync_from_batch()
         player.revealed_suits.append(suit)
         self.events.append(InfoRevealedEvent(kind="infoRevealed", suit_id=suit))
         record = RevealRecord(seat=seat, suit=suit, auto=auto)
         self.history[-1] = replace(self.history[-1], reveal=record)
         return record
 
-    # --- scoring (mirrors rules/scoring.ts, with the agreed index clamp) ---
-
     def score(self) -> list[ScoreRow]:
+        self._sync_to_batch()
+        scores = self._batch.scores()
         rows: list[ScoreRow] = []
         for player in self.players:
-            items = sum(
-                self.value_chart[min(self.initial_info_counts[suit - 1], 5)]
-                for suit in player.won_suits
+            objective_value = sum(
+                OBJECTIVE_PAYOUTS[objective_id] for objective_id in player.objective_wire_ids
             )
-            investments = sum(lock + payout for lock, payout in player.investments)
-            objectives = sum(OBJECTIVE_PAYOUTS[oid] for oid in player.objective_wire_ids)
-            loans = sum(player.loans)
+            items_value = int(scores.items[0, player.seat])
+            investments_value = int(scores.investments[0, player.seat])
+            loans_value = int(scores.loans[0, player.seat])
+            cash = int(scores.cash[0, player.seat])
             rows.append(
                 ScoreRow(
                     seat=player.seat,
                     name=player.name,
-                    cash=player.cash,
-                    items_value=items,
-                    objectives_value=objectives,
-                    investments_value=investments,
-                    loans_value=loans,
-                    total=player.cash + items + investments - loans + objectives,
+                    cash=cash,
+                    items_value=items_value,
+                    objectives_value=objective_value,
+                    investments_value=investments_value,
+                    loans_value=loans_value,
+                    total=(cash + items_value + objective_value + investments_value - loans_value),
                 )
             )
         return rows
 
     def ranking(self) -> list[int]:
-        return [row.seat for row in sorted(self.score(), key=lambda r: -r.total)]
+        return [row.seat for row in sorted(self.score(), key=lambda row: -row.total)]

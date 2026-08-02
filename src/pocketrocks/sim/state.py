@@ -10,10 +10,10 @@ class PlayerSim:
     seat: int
     name: str
     cash: int
-    hand_suits: list[int]                 # unrevealed info cards, deal order
+    hand_suits: list[int]  # unrevealed info cards, deal order
     won_suits: list[int] = field(default_factory=list)
     revealed_suits: list[int] = field(default_factory=list)
-    loans: list[int] = field(default_factory=list)          # principals
+    loans: list[int] = field(default_factory=list)  # principals
     investments: list[tuple[int, int]] = field(default_factory=list)  # (lock, payout)
     objective_wire_ids: list[int] = field(default_factory=list)
 

@@ -17,7 +17,7 @@ def test_malformed_env_still_raises_when_not_overridden(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("POCKETROCKS_BOT_CAPACITY", "foo")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="invalid literal for int"):
         BotConfig.from_env(api_key="k", bot_id="b")
 
 

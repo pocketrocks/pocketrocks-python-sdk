@@ -9,12 +9,13 @@ from typing import Any
 import pytest
 
 from pocketrocks import ActionId, BotDecision, PocketRocksBot, Suit
+from pocketrocks.internal.bot_wire_v2 import DecisionRequest, DecisionResponse
 from pocketrocks.testing import FakeTransport, decode_frames, heartbeat_bytes, scenario
-from pocketrocks.types import DecisionContext, RuntimeEvent
+from pocketrocks.types import DecisionContext, RuntimeEvent, decisionKind
 
 
 class RecordingBot(PocketRocksBot):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.contexts: list[DecisionContext] = []
         self.runtime_events: list[RuntimeEvent] = []
@@ -41,7 +42,7 @@ def _fixture_request_bytes(
     *,
     request_id: str,
     deadline_at: int,
-    decision_kind: str = "submitBid",
+    decision_kind: decisionKind = "submitBid",
 ) -> bytes:
     # Fixture defaults (3 players, one open Auction1, bot at seat 0) via the
     # shipped test kit — the same narration bot authors use.
@@ -58,7 +59,7 @@ def _fixture_request_bytes(
     )
 
 
-def test_vendored_bot_wire_matches_golden_fixture():
+def test_vendored_bot_wire_matches_golden_fixture() -> None:
     from pocketrocks.internal.bot_wire_v2 import reconstruct_decision_context
 
     fixture_path = Path(__file__).parent / "fixtures" / "bot_wire_v2.json"
@@ -66,6 +67,7 @@ def test_vendored_bot_wire_matches_golden_fixture():
     request_bytes = bytes.fromhex(fixture["decisionRequestHex"])
 
     frame = decode_frames([request_bytes])[0]
+    assert isinstance(frame, DecisionRequest)
     context = reconstruct_decision_context(frame)
 
     assert request_bytes.hex() == fixture["decisionRequestHex"]
@@ -75,7 +77,7 @@ def test_vendored_bot_wire_matches_golden_fixture():
 
 
 @pytest.mark.asyncio
-async def test_runtime_connects_handles_heartbeat_and_submits_decision():
+async def test_runtime_connects_handles_heartbeat_and_submits_decision() -> None:
     transport = FakeTransport(
         [
             heartbeat_bytes("11111111-1111-1111-1111-111111111111"),
@@ -101,8 +103,10 @@ async def test_runtime_connects_handles_heartbeat_and_submits_decision():
     )
     assert transport.connected_headers == {"Authorization": "ApiKey test-key"}
     assert [frame.kind for frame in sent_frames] == ["heartbeatResponse", "decisionResponse"]
-    assert sent_frames[1].action_kind == "submitBid"
-    assert sent_frames[1].value == 20
+    decision_response = sent_frames[1]
+    assert isinstance(decision_response, DecisionResponse)
+    assert decision_response.action_kind == "submitBid"
+    assert decision_response.value == 20
     assert bot.contexts[0].bot_seat == 0
     assert bot.contexts[0].current_hand_suit_ids == (1, 1, 3)
 
@@ -115,7 +119,7 @@ class ScriptedConnectTransport:
     ends with EOF once they are exhausted).
     """
 
-    def __init__(self, steps: list[object]) -> None:
+    def __init__(self, steps: list[Exception | list[bytes]]) -> None:
         self.steps = list(steps)
         self.connect_count = 0
         self.connected_headers: dict[str, str] | None = None
@@ -127,7 +131,7 @@ class ScriptedConnectTransport:
         self.connect_count += 1
         if isinstance(step, Exception):
             raise step
-        self._incoming = list(step)  # type: ignore[arg-type]
+        self._incoming = list(step)
 
     async def disconnect(self) -> None:
         return None
@@ -142,7 +146,7 @@ class ScriptedConnectTransport:
 
 
 @pytest.mark.asyncio
-async def test_runtime_retries_after_403_then_connects_when_reactivated():
+async def test_runtime_retries_after_403_then_connects_when_reactivated() -> None:
     from pocketrocks.exceptions import TransportRejected
 
     # Deactivated (403) on the first attempt, then reactivated: a successful
@@ -179,7 +183,7 @@ async def test_runtime_retries_after_403_then_connects_when_reactivated():
 
 
 @pytest.mark.asyncio
-async def test_runtime_stops_on_fatal_401_without_infinite_retry():
+async def test_runtime_stops_on_fatal_401_without_infinite_retry() -> None:
     from pocketrocks.exceptions import TransportRejected
 
     transport = ScriptedConnectTransport([TransportRejected(401, "bad key")])
@@ -203,13 +207,14 @@ async def test_runtime_stops_on_fatal_401_without_infinite_retry():
 
 
 @pytest.mark.asyncio
-async def test_runtime_prefers_raw_callback_when_overridden():
+async def test_runtime_prefers_raw_callback_when_overridden() -> None:
     class RawBot(RecordingBot):
         async def choose_decision(self, context: DecisionContext) -> BotDecision:
             raise AssertionError("high-level callback should not be used")
 
-        async def choose_raw_decision(self, frame, context: DecisionContext) -> BotDecision:
+        async def choose_raw_decision(self, frame: object, context: DecisionContext) -> BotDecision:
             self.contexts.append(context)
+            assert isinstance(frame, DecisionRequest)
             assert frame.kind == "decisionRequest"
             return BotDecision.pass_turn()
 
@@ -233,11 +238,13 @@ async def test_runtime_prefers_raw_callback_when_overridden():
 
     sent_frames = decode_frames(transport.sent_messages)
     assert [frame.kind for frame in sent_frames] == ["decisionResponse"]
-    assert sent_frames[0].action_kind == "pass"
+    decision_response = sent_frames[0]
+    assert isinstance(decision_response, DecisionResponse)
+    assert decision_response.action_kind == "pass"
 
 
 @pytest.mark.asyncio
-async def test_runtime_drops_overdue_requests_and_reports_overload():
+async def test_runtime_drops_overdue_requests_and_reports_overload() -> None:
     class SlowBot(RecordingBot):
         async def choose_decision(self, context: DecisionContext) -> BotDecision:
             await asyncio.sleep(0.05)
@@ -284,9 +291,9 @@ async def test_runtime_drops_overdue_requests_and_reports_overload():
 
 
 @pytest.mark.asyncio
-async def test_runtime_contains_callback_errors_and_keeps_processing():
+async def test_runtime_contains_callback_errors_and_keeps_processing() -> None:
     class FlakyBot(RecordingBot):
-        def __init__(self, *args, **kwargs) -> None:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             self.calls = 0
 
@@ -321,7 +328,9 @@ async def test_runtime_contains_callback_errors_and_keeps_processing():
     sent_frames = decode_frames(transport.sent_messages)
 
     assert [frame.kind for frame in sent_frames] == ["decisionResponse"]
-    assert sent_frames[0].action_kind == "pass"
+    decision_response = sent_frames[0]
+    assert isinstance(decision_response, DecisionResponse)
+    assert decision_response.action_kind == "pass"
     assert len(bot.errors) == 1
 
 

@@ -91,9 +91,7 @@ def build_sim_request_and_context(
     request frame for bots that override the ``choose_raw_decision`` escape
     hatch (mirroring the live runtime's dispatch).
     """
-    request = build_sim_request(
-        engine, seat, kind, budget_ms=budget_ms, turn_index=turn_index
-    )
+    request = build_sim_request(engine, seat, kind, budget_ms=budget_ms, turn_index=turn_index)
     action, resources = _latest_action_and_resources(engine)
     legal_max = None
     if kind == "submitBid":

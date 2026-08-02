@@ -19,11 +19,19 @@ venv/
 # Local secrets (never commit real credentials)
 .env
 
-# uv lockfile. This project is a *library*, not an application: downstream
-# consumers resolve their own dependency versions, so we intentionally do not
-# pin a lockfile. Remove this line if you decide to commit a reproducible
-# dev environment instead.
-uv.lock
+# uv.lock IS committed. It pins only this repo's development and CI
+# environment — installers of the published package resolve from
+# pyproject.toml metadata and never read it, so locking here constrains
+# nobody downstream. That our declared version floors actually work is
+# proven separately by the `floors` CI job (uv sync --resolution lowest-direct).
 
 # OS cruft
 .DS_Store
+
+# Controller scratch for subagent-driven execution (progress ledger, briefs).
+.superpowers/
+
+# Local agent task tracking. Canonical issues live in GitHub — see the docs
+# policy in docs/README.md. Ignored here rather than relying on a contributor's
+# global gitignore.
+.beads/

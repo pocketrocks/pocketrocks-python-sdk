@@ -26,8 +26,12 @@ VALUE_CHARTS: dict[str, tuple[int, ...]] = {
 }
 
 ACTION_DECK: tuple[str, ...] = (
-    ("Auction1",) * 12 + ("Auction2",) * 8 + ("Loan10",) * 3
-    + ("Loan20",) * 2 + ("Invest5",) * 3 + ("Invest10",) * 2
+    ("Auction1",) * 12
+    + ("Auction2",) * 8
+    + ("Loan10",) * 3
+    + ("Loan20",) * 2
+    + ("Invest5",) * 3
+    + ("Invest10",) * 2
 )
 ITEM_DECK_SUITS: tuple[int, ...] = tuple(s for s in (1, 2, 3, 4, 5) for _ in range(6))
 
@@ -40,9 +44,13 @@ ACTION_WIRE_IDS: dict[str, int] = dict(bot_wire_action_ids)
 ALL_OBJECTIVE_WIRE_IDS: tuple[int, ...] = tuple(range(1, 31))
 
 OBJECTIVE_PAYOUTS: dict[int, int] = {
-    1: 5, 2: 10, 3: 5, 4: 10, 5: 15,          # any-pattern objectives
-    **{wire_id: 5 for wire_id in range(6, 21)},    # per-suit pairs + two-suit sets
-    **{wire_id: 10 for wire_id in range(21, 31)},  # three-suit sets
+    1: 5,
+    2: 10,
+    3: 5,
+    4: 10,
+    5: 15,  # any-pattern objectives
+    **dict.fromkeys(range(6, 21), 5),  # per-suit pairs + two-suit sets
+    **dict.fromkeys(range(21, 31), 10),  # three-suit sets
 }
 
 

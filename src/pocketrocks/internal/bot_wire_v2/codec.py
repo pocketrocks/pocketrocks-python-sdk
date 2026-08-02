@@ -47,7 +47,7 @@ class _Reader:
         end = self.offset + length
         if end > len(self.data):
             raise ValueError("bot wire frame is truncated")
-        value = self.data[self.offset:end]
+        value = self.data[self.offset : end]
         self.offset = end
         return value
 

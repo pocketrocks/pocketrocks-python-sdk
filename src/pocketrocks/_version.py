@@ -5,5 +5,5 @@ golden-trace fixtures are regenerated). The update check fetches this file from
 the repo's ``develop`` branch to warn stale installs.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 RULES_VERSION = 1
