@@ -15,7 +15,18 @@ run_case() {
   # Files every valid tree has.
   touch "$tmp/README.md" "$tmp/CONTRIBUTING.md" "$tmp/REVIEW.md" \
         "$tmp/docs/README.md" "$tmp/docs/TYPES.md" "$tmp/docs/MAPPINGS.md"
-  for f in "$@"; do mkdir -p "$tmp/$(dirname "$f")"; touch "$tmp/$f"; done
+  # A "path->target" entry is created as a symlink instead of a regular file.
+  for f in "$@"; do
+    case "$f" in
+      *'->'*)
+        mkdir -p "$tmp/$(dirname "${f%%->*}")"
+        ln -s "${f#*->}" "$tmp/${f%%->*}"
+        ;;
+      *)
+        mkdir -p "$tmp/$(dirname "$f")"; touch "$tmp/$f"
+        ;;
+    esac
+  done
 
   local actual=0
   ( cd "$tmp" && sh "$GUARD" >/dev/null 2>&1 ) || actual=$?
@@ -49,6 +60,12 @@ run_case "compound status name at root rejected"       1 "SIM_STATUS.md"
 run_case "non-markdown file in docs/ rejected"         1 "docs/notes.txt"
 run_case "docs/README.md.bak rejected"                 1 "docs/README.md.bak"
 run_case "flat ADR with spaces in filename accepted"   0 "docs/adr/2026-07-31 example decision.md"
+
+# Regression tests — findings 4, 5 (codex review of 2bfc780).
+run_case "uppercase-extension status doc rejected"     1 "STATUS.MD"
+run_case "uppercase-extension compound status rejected" 1 "docs/NOTES_Status.Md"
+run_case "docs/ symlink to a non-canonical target rejected" \
+                                                        1 "docs/RANDOM_NOTES.md->../README.md"
 
 if [ "$FAILURES" -ne 0 ]; then
   echo "$FAILURES test(s) failed."

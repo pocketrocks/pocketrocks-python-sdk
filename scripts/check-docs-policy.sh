@@ -21,7 +21,7 @@ fail() { echo "docs-policy: $1" >&2; STATUS=1; }
 BANNED="$(
   find . \
     \( -name .git -o -name .venv -o -name node_modules -o -name .beads \) -prune -o \
-    -type f -name '*.md' -print \
+    -type f -iname '*.md' -print \
   | grep -Ei '(HANDOFF|ROADMAP|TECH[_-]?DEBT|STATUS)[^/]*\.md$' || true
 )"
 if [ -n "$BANNED" ]; then
@@ -34,11 +34,13 @@ $BANNED
 EOF
 fi
 
-# Rule 2 — docs/ allowlist. Every file under docs/, not just *.md: the policy
-# has no markdown qualifier, so docs/notes.txt and docs/README.md.bak must
-# also be rejected.
+# Rule 2 — docs/ allowlist. Every entry under docs/, not just *.md files: the
+# policy has no markdown qualifier, so docs/notes.txt and docs/README.md.bak
+# must also be rejected. Symlinks are included (git tracks them as repo
+# entries too), so a symlink standing in for a non-canonical file can't
+# bypass the allowlist.
 if [ -d docs ]; then
-  DOCS_FILES="$(find docs -type f)"
+  DOCS_FILES="$(find docs \( -type f -o -type l \))"
   if [ -n "$DOCS_FILES" ]; then
     while IFS= read -r f; do
       case "$f" in
