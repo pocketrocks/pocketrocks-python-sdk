@@ -222,6 +222,10 @@ class LocalGame:
                     _REPORT_DRAIN_TIMEOUT_S,
                 )
                 reporter.cancel()
+            # Bounded by the hook contract, not by us: a hook must let cancellation
+            # through. One that swallows CancelledError would hang any asyncio
+            # teardown of the task anyway (asyncio.run's _cancel_all_tasks included),
+            # so bounding this await is impossible and is not attempted.
             with contextlib.suppress(asyncio.CancelledError):
                 await reporter
 

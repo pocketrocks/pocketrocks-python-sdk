@@ -92,7 +92,11 @@ print(result.scores)  # one ScoreRow per seat
 (`play()`) or as a coroutine (`await play_async()`). A bot that raises or
 returns an illegal decision doesn't crash the game — it gets the live
 server's timeout fallback (bid 0 / reveal the first card), exactly as it
-would in production. Note that the local sim does not enforce the decision
+would in production. Rejected decisions are reported to your `on_runtime_event`
+/ `on_error` hooks off the game's path, by a background reporter, and delivery
+is best-effort: a slow or hanging hook never stalls the game, but its report
+(and any queued behind it) may be dropped at game end with a logged warning.
+Note that the local sim does not enforce the decision
 time budget itself (it just reports `decision_budget_ms` through
 `remaining_deadline_ms`) — only the live server actually times out a slow
 decision, so latency-sensitive bots should still be load-tested against a
