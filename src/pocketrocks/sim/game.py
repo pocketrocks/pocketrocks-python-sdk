@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -25,16 +26,27 @@ from .state import ScoreRow, TurnRecord
 
 logger = logging.getLogger("pocketrocks.sim")
 
+# Bounded wait, at game end, for reports still in flight. Reporting is best-effort
+# telemetry that the game never blocks on while it plays; this covers the tail so a
+# well-behaved hook still runs to completion before ``play_async`` returns. A hook
+# that never returns costs this much once, at the end, and is then cancelled —
+# awaiting it instead would put the hook back on the game's liveness path, and
+# simply dropping the task would leak a "Task was destroyed but it is pending"
+# warning from the loop with no explanation of why. Mirrors the update check's
+# ``_JOIN_TIMEOUT_S`` shutdown wait.
+_REPORT_DRAIN_TIMEOUT_S = 1.5
+
 
 @dataclass(frozen=True)
 class _PendingRejection:
-    """A rejection whose reporting is deferred until the engine has the decision.
+    """A rejection handed to the background reporter once the engine has the decision.
 
-    The sim reports illegal decisions *after* the value reaches the engine, so a
-    slow or misbehaving telemetry hook can never delay the game or change what the
-    engine sees. ``_ask`` builds this and commits the decision record; the game
-    loop fires it via ``_report`` once ``engine.resolve`` / ``apply_reveal`` has
-    consumed the value.
+    The sim reports illegal decisions *after* the value reaches the engine and
+    never on the game's own critical path, so a slow, blocking, or misbehaving
+    telemetry hook can neither delay the game nor change what the engine sees.
+    ``_ask`` builds this and commits the decision record; the game loop queues it
+    for ``_run_reporter`` once ``engine.resolve`` / ``apply_reveal`` has consumed
+    the value.
     """
 
     bot: PocketRocksBot
@@ -99,6 +111,11 @@ class LocalGame:
         self._budget_ms = decision_budget_ms
         self._record = record_decisions
         self._decisions: list[DecisionRecord] = []
+        # Created on the first rejection, inside the running loop: a LocalGame is
+        # constructed synchronously and may be replayed, so the queue and its
+        # worker cannot be bound to a loop here.
+        self._reports: asyncio.Queue[_PendingRejection | None] | None = None
+        self._reporter: asyncio.Task[None] | None = None
 
     def play(self) -> GameResult:
         return asyncio.run(self.play_async())
@@ -106,29 +123,32 @@ class LocalGame:
     async def play_async(self) -> GameResult:
         kickoff_update_check()
         engine = self._engine
-        while engine.flip_action() is not None:
-            turn = engine.turn_index
-            raw_bids: list[int] = []
-            pending_bids: list[_PendingRejection] = []
-            for seat, bot in enumerate(self._bots):
-                value, pending = await self._ask_bid(seat, bot, turn)
-                raw_bids.append(value)
-                if pending is not None:
-                    pending_bids.append(pending)
-            outcome = engine.resolve(raw_bids)
-            # The engine has now consumed every bid, so reporting the rejected
-            # ones cannot change the auction or gate it on a telemetry hook.
-            for pending in pending_bids:
-                await self._report(pending)
-            if outcome.reveal_needed == "auto":
-                engine.apply_reveal(outcome.winner_seat, 0, auto=True)
-            elif outcome.reveal_needed == "choice":
-                index, reveal_pending = await self._ask_reveal(
-                    outcome.winner_seat, self._bots[outcome.winner_seat], turn
-                )
-                engine.apply_reveal(outcome.winner_seat, index, auto=False)
-                if reveal_pending is not None:
-                    await self._report(reveal_pending)
+        try:
+            while engine.flip_action() is not None:
+                turn = engine.turn_index
+                raw_bids: list[int] = []
+                pending_bids: list[_PendingRejection] = []
+                for seat, bot in enumerate(self._bots):
+                    value, pending = await self._ask_bid(seat, bot, turn)
+                    raw_bids.append(value)
+                    if pending is not None:
+                        pending_bids.append(pending)
+                outcome = engine.resolve(raw_bids)
+                # The engine has now consumed every bid, so handing the rejected
+                # ones to the reporter cannot change the auction.
+                await self._hand_off(pending_bids)
+                if outcome.reveal_needed == "auto":
+                    engine.apply_reveal(outcome.winner_seat, 0, auto=True)
+                elif outcome.reveal_needed == "choice":
+                    index, reveal_pending = await self._ask_reveal(
+                        outcome.winner_seat, self._bots[outcome.winner_seat], turn
+                    )
+                    engine.apply_reveal(outcome.winner_seat, index, auto=False)
+                    if reveal_pending is not None:
+                        await self._hand_off([reveal_pending])
+        finally:
+            # Also on the way out of a failed game: never leave the worker behind.
+            await self._drain_reports()
         scores = tuple(engine.score())
         ranking = tuple(engine.ranking())
         return GameResult(
@@ -139,6 +159,71 @@ class LocalGame:
             history=tuple(engine.history),
             decisions=tuple(self._decisions),
         )
+
+    async def _hand_off(self, pending: Sequence[_PendingRejection]) -> None:
+        """Queue rejections for the reporter and give it exactly one scheduling slot.
+
+        The queue hand-off is what takes user telemetry hooks off the game's
+        liveness path: nothing here waits on a hook, so a hook that blocks forever
+        cannot stop the next seat, the next turn, the reveal, or the result. The
+        single ``sleep(0)`` lets a well-behaved reporter keep pace with the game
+        (rather than delivering the whole game's reports in a burst at the end)
+        and resumes on the next loop iteration no matter what the hook does.
+        """
+        if not pending:
+            return
+        queue = self._ensure_reporter()
+        for item in pending:
+            queue.put_nowait(item)
+        await asyncio.sleep(0)
+
+    def _ensure_reporter(self) -> asyncio.Queue[_PendingRejection | None]:
+        if self._reports is None:
+            self._reports = asyncio.Queue()
+            self._reporter = asyncio.create_task(
+                self._run_reporter(self._reports),
+                name="pocketrocks-sim-rejection-reporter",
+            )
+        return self._reports
+
+    async def _run_reporter(self, queue: asyncio.Queue[_PendingRejection | None]) -> None:
+        """Report queued rejections one at a time, in the order the game made them.
+
+        One worker rather than a task per rejection: a bot's hooks are never
+        re-entered concurrently and still see rejections in game order, exactly as
+        they did when the loop awaited them inline. The cost is head-of-line
+        blocking — a hook that hangs also holds up the reports behind it — which is
+        the right trade for best-effort telemetry whose ordering is observable.
+        """
+        while True:
+            pending = await queue.get()
+            if pending is None:  # sentinel: everything queued before it is reported
+                return
+            try:
+                await self._report(pending)
+            except Exception as error:  # noqa: BLE001 — telemetry never kills the reporter
+                logger.warning("reporting a rejected decision failed: %s", error)
+
+    async def _drain_reports(self) -> None:
+        """Give in-flight reports a bounded chance to finish, then cancel the worker."""
+        queue, reporter = self._reports, self._reporter
+        self._reports, self._reporter = None, None
+        if queue is None or reporter is None:
+            return
+        queue.put_nowait(None)
+        try:
+            await asyncio.wait({reporter}, timeout=_REPORT_DRAIN_TIMEOUT_S)
+        finally:
+            if not reporter.done():
+                logger.warning(
+                    "dropping %d unreported decision rejection(s): a reporting hook did "
+                    "not return within %s seconds",
+                    queue.qsize(),
+                    _REPORT_DRAIN_TIMEOUT_S,
+                )
+                reporter.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reporter
 
     async def _report(self, pending: _PendingRejection) -> None:
         await report_rejection(
@@ -189,10 +274,11 @@ class LocalGame:
             if rejection is not None:
                 # Defer reporting: report_rejection awaits user telemetry hooks,
                 # and the engine must receive the decision (via the caller's
-                # resolve / apply_reveal) before any hook runs, so a slow or
-                # misbehaving hook can never gate game progress. The record below
-                # is committed now, independent of the hook, so training data is
-                # never lost to a stalled callback.
+                # resolve / apply_reveal) before any hook runs. The caller hands
+                # this to the background reporter rather than awaiting it, so a
+                # slow or blocking hook can never gate game progress. The record
+                # below is committed now, independent of the hook, so training
+                # data is never lost to a stalled callback.
                 pending = _PendingRejection(
                     bot=bot,
                     context=context,
