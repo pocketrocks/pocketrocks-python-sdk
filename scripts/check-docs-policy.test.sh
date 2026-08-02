@@ -63,9 +63,16 @@ run_case "flat ADR with spaces in filename accepted"   0 "docs/adr/2026-07-31 ex
 
 # Regression tests — findings 4, 5 (codex review of 2bfc780).
 run_case "uppercase-extension status doc rejected"     1 "STATUS.MD"
-run_case "uppercase-extension compound status rejected" 1 "docs/NOTES_Status.Md"
+# Fixture lives outside docs/ so this pins Rule 1's -iname path specifically;
+# a fixture under docs/ would be rejected by Rule 2's allowlist regardless of
+# case-sensitivity, and wouldn't actually exercise Rule 1.
+run_case "uppercase-extension compound status rejected" 1 "SIM_STATUS.MD"
 run_case "docs/ symlink to a non-canonical target rejected" \
                                                         1 "docs/RANDOM_NOTES.md->../README.md"
+
+# Regression test — follow-up review of b4ec3b4: Rule 1 also missed symlinks
+# outside docs/ (e.g. a symlink named HANDOFF.md standing in for a real file).
+run_case "symlinked status doc outside docs/ rejected" 1 "NOTES.md" "HANDOFF.md->NOTES.md"
 
 if [ "$FAILURES" -ne 0 ]; then
   echo "$FAILURES test(s) failed."

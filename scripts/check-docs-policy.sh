@@ -17,11 +17,13 @@ fail() { echo "docs-policy: $1" >&2; STATUS=1; }
 
 # Rule 1 — banned document shapes, anywhere except vendored/ignored trees.
 # Matched anywhere in the filename, case-insensitively: a file named
-# *_STATUS.md is a status document just as much as STATUS.md is.
+# *_STATUS.md is a status document just as much as STATUS.md is. Symlinks are
+# included too (git tracks them as repo entries), so a symlink named
+# HANDOFF.md can't stand in for a banned file and dodge the ban.
 BANNED="$(
   find . \
     \( -name .git -o -name .venv -o -name node_modules -o -name .beads \) -prune -o \
-    -type f -iname '*.md' -print \
+    \( -type f -o -type l \) -iname '*.md' -print \
   | grep -Ei '(HANDOFF|ROADMAP|TECH[_-]?DEBT|STATUS)[^/]*\.md$' || true
 )"
 if [ -n "$BANNED" ]; then
