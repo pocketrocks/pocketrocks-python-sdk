@@ -23,13 +23,6 @@ from .state import ScoreRow, TurnRecord
 
 logger = logging.getLogger("pocketrocks.sim")
 
-# How long ``play_async`` waits, at game end, for reports still in flight before
-# cancelling the reporter. See ``RejectionReporter`` for why the wait is bounded at
-# all; the value matches the update check's ``_JOIN_TIMEOUT_S`` shutdown wait. Kept
-# per-surface because a training loop and a live bot could reasonably want
-# different end-of-run telemetry budgets.
-_REPORT_DRAIN_TIMEOUT_S = 1.5
-
 
 @dataclass(frozen=True)
 class DecisionRecord:
@@ -121,7 +114,7 @@ class LocalGame:
                         await self._reporter.hand_off(reveal_pending)
         finally:
             # Also on the way out of a failed game: never leave the worker behind.
-            await self._reporter.drain(timeout_s=_REPORT_DRAIN_TIMEOUT_S)
+            await self._reporter.drain()
         scores = tuple(engine.score())
         ranking = tuple(engine.ranking())
         return GameResult(

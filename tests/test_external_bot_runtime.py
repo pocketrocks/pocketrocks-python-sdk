@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from pocketrocks import ActionId, BotDecision, PocketRocksBot, Suit
-from pocketrocks import runtime as runtime_module
+from pocketrocks import _reporting as reporting
 from pocketrocks.internal.bot_wire_v2 import DecisionRequest, DecisionResponse, Frame
 from pocketrocks.testing import FakeTransport, decode_frames, heartbeat_bytes, scenario
 from pocketrocks.types import DecisionContext, RuntimeEvent, decisionKind
@@ -527,7 +527,7 @@ async def test_a_hanging_report_hook_does_not_occupy_the_worker(
     # otherwise own that worker forever, leaving every later request queued until
     # its deadline, and runtime shutdown would hang in gather() on the same task.
     # Sending the response first protects only that response, not the ones behind it.
-    monkeypatch.setattr(runtime_module, "_REPORT_DRAIN_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(reporting, "DEFAULT_DRAIN_TIMEOUT_S", 0.05)
 
     class HangingReportBot(FixedDecisionBot):
         async def on_runtime_event(self, event: RuntimeEvent) -> None:

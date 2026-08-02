@@ -18,6 +18,12 @@ from typing import Any, Protocol
 from pocketrocks.exceptions import InvalidBotDecision
 from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent, decisionFate
 
+# How long a caller shutting down waits for reports still in flight before the
+# reporter is cancelled. See ``RejectionReporter`` for why the wait is bounded at
+# all; the value matches the update check's ``_JOIN_TIMEOUT_S`` shutdown wait. One
+# default for every surface — pass ``drain(timeout_s=...)`` to override it.
+DEFAULT_DRAIN_TIMEOUT_S = 1.5
+
 
 class _RejectionSink(Protocol):
     async def on_runtime_event(self, event: RuntimeEvent) -> None: ...
@@ -117,8 +123,13 @@ class RejectionReporter:
             except Exception as error:  # noqa: BLE001 — telemetry never kills the worker
                 self._logger.warning("reporting a rejected decision failed: %s", error)
 
-    async def drain(self, *, timeout_s: float) -> None:
-        """Let in-flight reports finish within ``timeout_s``, then cancel the worker."""
+    async def drain(self, *, timeout_s: float | None = None) -> None:
+        """Let in-flight reports finish, then cancel the worker.
+
+        ``timeout_s`` defaults to :data:`DEFAULT_DRAIN_TIMEOUT_S`, read at call time
+        so a surface can override it per drain without shadowing the shared default.
+        """
+        timeout_s = DEFAULT_DRAIN_TIMEOUT_S if timeout_s is None else timeout_s
         queue, worker = self._queue, self._worker
         self._queue, self._worker = None, None
         if queue is None or worker is None:

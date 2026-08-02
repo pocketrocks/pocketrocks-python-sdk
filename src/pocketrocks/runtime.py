@@ -33,12 +33,6 @@ from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent, classi
 
 logger = logging.getLogger("pocketrocks.runtime")
 
-# How long disconnect waits for reports still in flight before cancelling the
-# reporter. See ``RejectionReporter`` for why the wait is bounded at all; the value
-# matches the update check's ``_JOIN_TIMEOUT_S`` shutdown wait. Kept per-surface
-# because a live bot and a training loop could reasonably want different budgets.
-_REPORT_DRAIN_TIMEOUT_S = 1.5
-
 
 def now_ms() -> int:
     return int(time.time() * 1000)
@@ -165,13 +159,16 @@ class PocketRocksRuntime:
                     await request_queue.put(None)
                 if workers:
                     await asyncio.gather(*workers, return_exceptions=True)
-                # After the workers, which can queue a report right up to their last
-                # item, and before on_disconnect, so a bot hears why a decision was
-                # rejected before it hears the connection ended. Bounded, then
-                # cancelled: shutdown must no more hang on a telemetry hook than a
-                # worker must. A reconnect gets a fresh reporter.
-                await self._reporter.drain(timeout_s=_REPORT_DRAIN_TIMEOUT_S)
                 await self.transport.disconnect()
+                # After the workers, which can queue a report right up to their last
+                # item, and after the socket is closed — reports touch only bot
+                # hooks, so draining first would hold the connection open for the
+                # drain's duration on every teardown. Still before on_disconnect, so
+                # a bot hears why a decision was rejected before it hears the
+                # connection ended. Bounded, then cancelled: shutdown must no more
+                # hang on a telemetry hook than a worker must. A reconnect gets a
+                # fresh reporter.
+                await self._reporter.drain()
                 if connected:
                     logger.info("disconnected from %s", self.config.server_url)
                     await self.bot.on_disconnect()

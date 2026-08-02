@@ -5,8 +5,8 @@ import asyncio
 import pytest
 
 from pocketrocks import BotDecision, DecisionContext, PocketRocksBot
+from pocketrocks import _reporting as reporting
 from pocketrocks.sim import LocalGame
-from pocketrocks.sim import game as sim_game
 from pocketrocks.types import RuntimeEvent
 
 
@@ -319,7 +319,7 @@ async def test_a_hanging_report_hook_does_not_stall_the_game(
     # must not stop later seats deciding, later turns running, or the GameResult
     # coming back. Deferring the await to just after engine.resolve() was not
     # enough: the loop still awaited it, so the game hung on the first rejection.
-    monkeypatch.setattr(sim_game, "_REPORT_DRAIN_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(reporting, "DEFAULT_DRAIN_TIMEOUT_S", 0.05)
     bot = HangingReportBot()
     game = LocalGame([bot, PassBot(), PassBot()], seed=7, record_decisions=True)
 
