@@ -117,3 +117,41 @@ async def test_a_stuck_hook_does_not_grow_the_backlog_without_bound(
     assert any("backlog hit its cap" in r.message for r in caplog.records)
 
     await asyncio.wait_for(reporter.drain(timeout_s=0.05), timeout=2.0)
+
+
+async def test_drain_delivers_a_full_backlog_once_a_healthy_hook_unblocks(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # A burst fills the queue, but the hook is healthy — just momentarily blocked.
+    # drain must place its sentinel once the worker frees a slot, deliver the whole
+    # backlog, and return promptly. It must NOT drop the sentinel and then wait out
+    # the full timeout with a misleading stuck-hook warning.
+    monkeypatch.setattr(reporting, "MAX_QUEUED_REPORTS", 4)
+    gate = asyncio.Event()
+    seen: list[str] = []
+
+    class Gated:
+        async def on_runtime_event(self, event: RuntimeEvent) -> None:
+            await gate.wait()  # blocked only until the test releases it
+            seen.append(str(event.details["request_id"]))
+
+        async def on_error(self, error: Exception) -> None:
+            return None
+
+    reporter = RejectionReporter(logging.getLogger("test"))
+    bot = Gated()
+
+    # Worker takes "0" and blocks on the gate; "1".."4" fill the queue, "5" is
+    # dropped over the cap. Queue is now full at drain time.
+    for i in range(6):
+        await reporter.hand_off(_pending(bot, str(i)))
+    assert reporter._queue is not None
+    assert reporter._queue.qsize() == 4
+
+    gate.set()  # healthy again — the whole backlog can now flow
+    with caplog.at_level(logging.WARNING):
+        await asyncio.wait_for(reporter.drain(timeout_s=0.5), timeout=2.0)
+
+    assert seen == ["0", "1", "2", "3", "4"]  # every buffered report delivered
+    assert not any("did not return within" in r.message for r in caplog.records)

@@ -181,27 +181,31 @@ class RejectionReporter:
         self._queue, self._worker = None, None
         if queue is None or worker is None:
             return
-        # A stuck hook may have filled the queue; the sentinel is best-effort, and
-        # if it can't land the worker is wedged anyway and the timeout/cancel below
-        # is what stops it.
-        with contextlib.suppress(asyncio.QueueFull):
-            queue.put_nowait(None)
+        async def _finish() -> None:
+            # ``put`` (not ``put_nowait``): a burst may have filled the queue, so
+            # await a slot — which a healthy worker frees as it consumes the
+            # backlog — rather than dropping the stop signal and forcing drain to
+            # wait out the whole timeout on a queue that would have finished on its
+            # own. Then let the worker report everything ahead of the sentinel and
+            # return. Bounded by the wait_for below.
+            await queue.put(None)
+            await worker
+
         try:
-            await asyncio.wait({worker}, timeout=timeout_s)
-        finally:
-            if not worker.done():
-                self._logger.warning(
-                    "dropping %d buffered + %d over-cap decision rejection(s): a "
-                    "reporting hook did not return within %s seconds",
-                    queue.qsize(),
-                    self._dropped,
-                    timeout_s,
-                )
-                worker.cancel()
-            # Bounded by the hook contract, not by us: a hook must let cancellation
-            # through. One that swallows CancelledError would hang any asyncio
-            # teardown of the task anyway (asyncio.run's _cancel_all_tasks included),
-            # so bounding this await is impossible and is not attempted.
+            await asyncio.wait_for(_finish(), timeout=timeout_s)
+        except asyncio.TimeoutError:
+            # Only reached when a hook genuinely does not return within the bound:
+            # the worker is still wedged, so whatever is buffered (and anything
+            # already dropped over the cap) will not be delivered. Cancel rather
+            # than wait unbounded.
+            self._logger.warning(
+                "dropping %d buffered + %d over-cap decision rejection(s): a "
+                "reporting hook did not return within %s seconds",
+                queue.qsize(),
+                self._dropped,
+                timeout_s,
+            )
+            worker.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await worker
 
