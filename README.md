@@ -89,10 +89,24 @@ print(result.scores)  # one ScoreRow per seat
 ```
 
 `LocalGame` takes 3-5 bot instances and plays one seeded game synchronously
-(`play()`) or as a coroutine (`await play_async()`). A bot that raises or
-returns an illegal decision doesn't crash the game — it gets the live
-server's timeout fallback (bid 0 / reveal the first card), exactly as it
-would in production. Note that the local sim does not enforce the decision
+(`play()`) or as a coroutine (`await play_async()`). A bot that raises, times
+out, or returns an *unrepairable* decision doesn't crash the game — it gets the
+live server's timeout fallback (bid 0 / reveal the first card), exactly as it
+would in production. A decision the server would *repair* is treated as the
+server would treat it, not collapsed to the fallback: an over-max bid is
+forwarded and the engine clamps it to the legal maximum (matching `recordBid`),
+and a bid the wire can't carry (negative, or above the wire limit) is corrected
+into range and then clamped. So an overbidding bot competes for the auction in
+the sim exactly as it would live, rather than training against a 0-bid penalty
+that production never applies. A decision the SDK flags as *illegal* — whether
+it is discarded to the fallback, forwarded, or corrected — is reported to your
+`on_runtime_event` / `on_error` hooks off the game's path, by a background
+reporter. A bot that *raises* or times out is caught and given the fallback but
+is **not** surfaced through those hooks; only decisions the SDK inspects and
+rejects are reported. Delivery is best-effort: a slow or hanging hook never
+stalls the game, but its report (and any queued behind it) may be dropped at
+game end with a logged warning.
+Note that the local sim does not enforce the decision
 time budget itself (it just reports `decision_budget_ms` through
 `remaining_deadline_ms`) — only the live server actually times out a slow
 decision, so latency-sensitive bots should still be load-tested against a
@@ -228,7 +242,10 @@ Each entry in the list you pass to `run_games` (a `BotProvider`) can be:
 To collect what your bot actually saw and did — for RL training data or
 debugging — pass `record_decisions=True` and read `result.decisions`
 (`DecisionRecord`: turn index, seat, decision kind, the exact
-`DecisionContext`, the bot's `BotDecision`, and whether a fallback fired).
+`DecisionContext`, the bot's original `BotDecision`, whether a fallback fired,
+and — when the bot's bid could not be encoded and was corrected into wire range
+— the `corrected` substitute actually dispatched to the engine, so training-data
+consumers can tell the bot's intent from what the engine received).
 Don't try to recover this from bot instance state — with `workers>1` your
 instance never comes back from the worker process, and even with `workers=1`
 a fresh instance is constructed per game for class/factory providers.
@@ -399,7 +416,8 @@ Override any of these coroutines as needed; all are no-ops by default:
 
 `RuntimeEvent.kind` values: `connected`, `disconnected`, `connectionRejected`,
 `connectionError`, `heartbeatReceived`, `heartbeatSent`, `requestQueued`,
-`requestDropped`, `requestCompleted`, `requestFailed`, `malformedFrame`.
+`requestDropped`, `requestCompleted`, `requestFailed`, `malformedFrame`,
+`decisionRejected`.
 
 ### Protocol-aware bots
 
@@ -434,6 +452,7 @@ MyBot(api_key="...", bot_id="123", server_url="wss://host").run()
 | `POCKETROCKS_RECONNECT_MAX_DELAY_SECONDS` | `reconnect_max_delay_seconds` | No | `8` |
 | `POCKETROCKS_REJECTED_RECONNECT_MAX_DELAY_SECONDS` | `rejected_reconnect_max_delay_seconds` | No | `60` |
 | `POCKETROCKS_LOG_LEVEL` | — | No | `INFO` |
+| `POCKETROCKS_DEBUG` | `debug` | No | `false` |
 
 The annotated template is [`.env.example`](.env.example).
 

@@ -1,4 +1,4 @@
-from .codec import decode_frame, encode_frame
+from .codec import decode_frame, encode_frame, max_safe_integer
 from .reconstruction import reconstruct_decision_context
 from .types import (
     AuctionResolvedEvent,
@@ -28,5 +28,6 @@ __all__ = [
     "TurnOpenedEvent",
     "decode_frame",
     "encode_frame",
+    "max_safe_integer",
     "reconstruct_decision_context",
 ]

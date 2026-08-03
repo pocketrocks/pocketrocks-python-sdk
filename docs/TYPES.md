@@ -88,8 +88,16 @@ MyBot(
     reconnect_base_delay_seconds: float | None = None,          # default 0.5
     reconnect_max_delay_seconds: float | None = None,           # default 8.0
     rejected_reconnect_max_delay_seconds: float | None = None,  # default 60.0
+    debug: bool | None = None,                   # default False
 )
 ```
+
+`debug` (env: `POCKETROCKS_DEBUG`) is detail-only: it adds the full
+[`DecisionContext`](#decisioncontext) to a
+[`decisionRejected`](#decisionrejected-details) event's `details["context"]`, so
+you can see exactly what your bot was looking at when it played an illegal move.
+It never gates whether that event fires, whether the rejection is logged, or what
+the SDK sends to the server.
 
 ---
 
@@ -182,7 +190,24 @@ Passed to `on_runtime_event`. Read-only.
 
 `connected`, `disconnected`, `connectionRejected`, `connectionError`,
 `heartbeatReceived`, `heartbeatSent`, `requestQueued`, `requestDropped`,
-`requestCompleted`, `requestFailed`, `malformedFrame`.
+`requestCompleted`, `requestFailed`, `malformedFrame`, `decisionRejected`.
+
+### `decisionRejected` details
+
+Emitted when a bot's decision fails legality checking. `applied` is the fate
+the SDK's internal `classify()` sorted it into; the possible values are the
+[`decisionFate`](#type-aliases) alias below.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `request_id` | `str` | The request the decision answered. |
+| `decision_kind` | `str` | The request's `decisionKind` (`submitBid` or `selectInfoToReveal`). |
+| `action_kind` | `str` | The bot's decision's `action_kind`. |
+| `value` | `int \| None` | The bot's original value, before any correction. |
+| `detail` | `str` | Human-readable reason the decision was rejected. |
+| `applied` | `str` (`decisionFate`) | `"discarded"`, `"corrected"`, or `"forwarded"`. |
+| `corrected_value` | `int \| None` | Present only when `applied == "corrected"` — the wire-representable value actually sent. |
+| `context` | `DecisionContext` | Present only when `debug` is on. |
 
 ---
 
@@ -238,6 +263,7 @@ Exposed on the dataclasses for reference / type-checking:
 ```python
 decisionKind = Literal["submitBid", "selectInfoToReveal"]
 decisionActionKind = Literal["pass", "submitBid", "selectInfoToReveal"]
+decisionFate = Literal["ok", "discarded", "corrected", "forwarded"]
 runtimeEventKind = Literal[
     "connected",
     "disconnected",
@@ -250,6 +276,7 @@ runtimeEventKind = Literal[
     "requestCompleted",
     "requestFailed",
     "malformedFrame",
+    "decisionRejected",
 ]
 ```
 

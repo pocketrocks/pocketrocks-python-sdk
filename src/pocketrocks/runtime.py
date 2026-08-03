@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from pocketrocks._reporting import PendingRejection, RejectionReporter
 from pocketrocks.config import BotConfig
 from pocketrocks.constants import fatal_connect_status_codes
 from pocketrocks.exceptions import (
@@ -28,7 +29,7 @@ from pocketrocks.protocol import (
 )
 from pocketrocks.reconnect import ReconnectOutcome, ReconnectPolicy
 from pocketrocks.transport import WebSocketTransport
-from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent
+from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent, classify
 
 logger = logging.getLogger("pocketrocks.runtime")
 
@@ -58,6 +59,10 @@ class PocketRocksRuntime:
         self.policy = policy or ReconnectPolicy(config)
         self.write_lock = asyncio.Lock()
         self.stop_requested = False
+        # Rejections are reported off the workers — a bot's telemetry hook must not
+        # be able to occupy the worker that is about to take the next request.
+        # Shared with the sim so both surfaces deliver the same reports the same way.
+        self._reporter = RejectionReporter(logger)
 
     async def run(self) -> None:
         logger.info(
@@ -155,6 +160,15 @@ class PocketRocksRuntime:
                 if workers:
                     await asyncio.gather(*workers, return_exceptions=True)
                 await self.transport.disconnect()
+                # After the workers, which can queue a report right up to their last
+                # item, and after the socket is closed — reports touch only bot
+                # hooks, so draining first would hold the connection open for the
+                # drain's duration on every teardown. Still before on_disconnect, so
+                # a bot hears why a decision was rejected before it hears the
+                # connection ended. Bounded, then cancelled: shutdown must no more
+                # hang on a telemetry hook than a worker must. A reconnect gets a
+                # fresh reporter.
+                await self._reporter.drain()
                 if connected:
                     logger.info("disconnected from %s", self.config.server_url)
                     await self.bot.on_disconnect()
@@ -244,14 +258,40 @@ class PocketRocksRuntime:
             try:
                 context = build_decision_context(frame, received_at=queued_request.received_at)
                 decision = await self._resolve_decision(frame, context, remaining_ms)
-                context.validate(decision)
-                await self._send_frame(decision_to_protocol_response(frame.request_id, decision))
+                applied, rejection, outgoing = classify(context, decision)
+                # Send before reporting: report_rejection awaits user-defined
+                # callbacks, and a slow or raising hook must never consume the
+                # decision deadline or suppress the response. "discarded" is the
+                # only fate with nothing sendable.
+                if applied != "discarded":
+                    await self._send_frame(
+                        decision_to_protocol_response(frame.request_id, outgoing)
+                    )
+                if rejection is not None:
+                    # Hand off, never await: report_rejection awaits user-defined
+                    # hooks, and a hook that blocks would own this worker until it
+                    # returned — starving max_in_flight_decisions and hanging the
+                    # gather() in run()'s finally. Sending first (above) protects
+                    # only this response; not awaiting protects the ones behind it.
+                    await self._reporter.hand_off(
+                        PendingRejection(
+                            bot=self.bot,
+                            context=context,
+                            decision=decision,
+                            error=rejection,
+                            applied=applied,
+                            debug=self.config.debug,
+                            outgoing=outgoing,
+                        )
+                    )
+                if applied == "discarded":
+                    continue
                 logger.debug(
                     "request %s (%s) -> %s %s",
                     frame.request_id,
                     frame.decision_kind,
-                    decision.action_kind,
-                    decision.value if decision.value is not None else "",
+                    outgoing.action_kind,
+                    outgoing.value if outgoing.value is not None else "",
                 )
                 await self.bot.on_runtime_event(
                     RuntimeEvent(kind="requestCompleted", details={"request_id": frame.request_id})

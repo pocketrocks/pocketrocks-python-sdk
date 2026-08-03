@@ -27,6 +27,7 @@ class PocketRocksBot(ABC):
         reconnect_base_delay_seconds: float | None = None,
         reconnect_max_delay_seconds: float | None = None,
         rejected_reconnect_max_delay_seconds: float | None = None,
+        debug: bool | None = None,
         transport: Any | None = None,
     ) -> None:
         # Explicit constructor args win over env; from_env only reads/parses an
@@ -46,6 +47,7 @@ class PocketRocksBot(ABC):
             reconnect_base_delay_seconds=reconnect_base_delay_seconds,
             reconnect_max_delay_seconds=reconnect_max_delay_seconds,
             rejected_reconnect_max_delay_seconds=rejected_reconnect_max_delay_seconds,
+            debug=debug,
         )
         self.transport = transport
 

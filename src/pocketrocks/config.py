@@ -86,6 +86,9 @@ _SETTINGS: tuple[_Setting, ...] = (
         "rejected_reconnect_max_delay_seconds",
         _float("POCKETROCKS_REJECTED_RECONNECT_MAX_DELAY_SECONDS", 60.0),
     ),
+    # Detail-only switch: gates whether a rejection event carries the full
+    # DecisionContext. It never gates whether the event fires or is logged.
+    _Setting("debug", _bool("POCKETROCKS_DEBUG", False)),
 )
 
 
@@ -104,6 +107,7 @@ class BotConfig:
     reconnect_base_delay_seconds: float
     reconnect_max_delay_seconds: float
     rejected_reconnect_max_delay_seconds: float
+    debug: bool
 
     @classmethod
     def from_env(cls, **overrides: Any) -> BotConfig:
