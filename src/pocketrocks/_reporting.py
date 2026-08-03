@@ -181,6 +181,7 @@ class RejectionReporter:
         self._queue, self._worker = None, None
         if queue is None or worker is None:
             return
+
         async def _finish() -> None:
             # ``put`` (not ``put_nowait``): a burst may have filled the queue, so
             # await a slot — which a healthy worker frees as it consumes the
