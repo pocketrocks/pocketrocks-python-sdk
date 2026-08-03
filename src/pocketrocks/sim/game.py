@@ -78,10 +78,13 @@ class LocalGame:
         self._budget_ms = decision_budget_ms
         self._record = record_decisions
         self._decisions: list[DecisionRecord] = []
-        # Rejections are reported off the game's critical path — a bot's telemetry
-        # hook must not be able to stall the auction. Shared with the live runtime
-        # so both surfaces deliver the same reports the same way.
-        self._reporter = RejectionReporter(logger)
+        # One reporter per seat, not one per game. Reports go off the game's
+        # critical path (a bot's telemetry hook can't stall the auction), and
+        # isolating them per bot means one bot's hanging hook can only suppress
+        # its own reports — never another seat's. That also matches the live
+        # runtime, where every bot has its own connection and reporter, so the
+        # sim/live reporting parity holds even when one opponent's hook hangs.
+        self._reporters = [RejectionReporter(logger) for _ in self._bots]
 
     def play(self) -> GameResult:
         return asyncio.run(self.play_async())
@@ -93,16 +96,17 @@ class LocalGame:
             while engine.flip_action() is not None:
                 turn = engine.turn_index
                 raw_bids: list[int] = []
-                pending_bids: list[PendingRejection] = []
+                pending_bids: list[tuple[int, PendingRejection]] = []
                 for seat, bot in enumerate(self._bots):
                     value, pending = await self._ask_bid(seat, bot, turn)
                     raw_bids.append(value)
                     if pending is not None:
-                        pending_bids.append(pending)
+                        pending_bids.append((seat, pending))
                 outcome = engine.resolve(raw_bids)
                 # The engine has now consumed every bid, so handing the rejected
-                # ones to the reporter cannot change the auction.
-                await self._reporter.hand_off(*pending_bids)
+                # ones to their seat's reporter cannot change the auction.
+                for seat, pending in pending_bids:
+                    await self._reporters[seat].hand_off(pending)
                 if outcome.reveal_needed == "auto":
                     engine.apply_reveal(outcome.winner_seat, 0, auto=True)
                 elif outcome.reveal_needed == "choice":
@@ -111,10 +115,12 @@ class LocalGame:
                     )
                     engine.apply_reveal(outcome.winner_seat, index, auto=False)
                     if reveal_pending is not None:
-                        await self._reporter.hand_off(reveal_pending)
+                        await self._reporters[outcome.winner_seat].hand_off(reveal_pending)
         finally:
-            # Also on the way out of a failed game: never leave the worker behind.
-            await self._reporter.drain()
+            # Never leave a worker behind, even on a failed game. Drain all seats
+            # concurrently so one bot's stuck hook can't delay another's delivery
+            # by the full drain timeout.
+            await asyncio.gather(*(reporter.drain() for reporter in self._reporters))
         scores = tuple(engine.score())
         ranking = tuple(engine.ranking())
         return GameResult(

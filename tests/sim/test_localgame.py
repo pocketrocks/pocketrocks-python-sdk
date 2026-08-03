@@ -350,3 +350,36 @@ def test_sim_reports_an_out_of_range_reveal_as_discarded() -> None:
     reveals = [d for d in result.decisions if d.seat == 0 and d.kind == "selectInfoToReveal"]
     assert reveals, "winner was never asked to reveal"
     assert all(d.fallback == "illegal" for d in reveals)
+
+
+class HangingHookOverbidBot(PocketRocksBot):
+    """Overbids (so it produces a rejection) and then hangs forever in its
+    reporting hooks, wedging its own reporter."""
+
+    async def choose_decision(self, context: DecisionContext) -> BotDecision:
+        if context.decision_kind == "submitBid":
+            return BotDecision.submit_bid(9_999)
+        return BotDecision.select_info_to_reveal(0)
+
+    async def on_runtime_event(self, event: RuntimeEvent) -> None:
+        await asyncio.Event().wait()  # never returns
+
+    async def on_error(self, error: Exception) -> None:
+        await asyncio.Event().wait()  # never returns
+
+
+def test_one_bots_hanging_hook_does_not_suppress_another_bots_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Per-bot reporters: seat 0's hook hangs forever, but seat 1's rejection must
+    # still be delivered. A single game-wide reporter would wedge on seat 0 and
+    # cancel at drain, so seat 1 would never see its decisionRejected — and the
+    # sim/live parity would break, since live gives each bot its own reporter.
+    monkeypatch.setattr("pocketrocks._reporting.DEFAULT_DRAIN_TIMEOUT_S", 0.1)
+
+    healthy = ReportingOverbidBot()  # also overbids -> rejection, records events
+    LocalGame([HangingHookOverbidBot(), healthy, PassBot()], seed=7).play()
+
+    assert _rejections(healthy), (
+        "the healthy bot's rejection must be delivered despite another seat's hanging hook"
+    )
