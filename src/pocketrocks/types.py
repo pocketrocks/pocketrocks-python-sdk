@@ -92,8 +92,10 @@ class DecisionContext:
         Legality is a pure function of the context and the decision: the response
         kind must match the request kind, a bid must be non-negative and within
         ``legal_max_amount``, and a reveal index must be within
-        ``revealable_count``. ``pass`` is always legal. A bot can call this (or
-        :meth:`is_legal`) to self-check before returning.
+        ``revealable_count``. A ``pass`` is legal for either request kind, but
+        only when it carries no value (``value is None``) — the wire has no field
+        for a value on a pass. A bot can call this (or :meth:`is_legal`) to
+        self-check before returning.
 
         The runtime does **not** call this directly — it calls :func:`classify`,
         which sorts the same rules into the ones the server repairs and the ones
