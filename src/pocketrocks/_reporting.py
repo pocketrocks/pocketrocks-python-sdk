@@ -24,6 +24,16 @@ from pocketrocks.types import BotDecision, DecisionContext, RuntimeEvent, decisi
 # default for every surface — pass ``drain(timeout_s=...)`` to override it.
 DEFAULT_DRAIN_TIMEOUT_S = 1.5
 
+# Cap on rejection reports buffered while the worker is busy. Reporting is
+# best-effort telemetry, so a hook that never returns must not let the backlog
+# grow without bound — each entry pins a full ``DecisionContext`` and the bot, so
+# an unbounded queue behind a stuck hook is a slow memory leak that can exhaust a
+# long-lived production process. A well-behaved hook keeps the depth in the single
+# digits (``hand_off`` yields the worker a slot after each batch), so this ceiling
+# only bites a genuinely stuck one; past it, further reports are dropped with a
+# warning rather than buffered forever.
+MAX_QUEUED_REPORTS = 1024
+
 
 class _RejectionSink(Protocol):
     async def on_runtime_event(self, event: RuntimeEvent) -> None: ...
@@ -80,6 +90,7 @@ class RejectionReporter:
         # built synchronously by its owner, so it cannot bind a loop up front.
         self._queue: asyncio.Queue[PendingRejection | None] | None = None
         self._worker: asyncio.Task[None] | None = None
+        self._dropped = 0
 
     async def hand_off(self, *pending: PendingRejection) -> None:
         """Queue rejections and give the worker exactly one scheduling slot.
@@ -88,17 +99,32 @@ class RejectionReporter:
         the caller. The single ``sleep(0)`` lets a well-behaved hook keep pace
         with the caller instead of everything landing at ``drain`` time, and it
         resumes on the next loop iteration whatever the hook does.
+
+        The queue is bounded (:data:`MAX_QUEUED_REPORTS`): if a stuck hook has let
+        the backlog fill, the report is dropped rather than buffered without limit.
+        Dropping is the correct failure mode for best-effort telemetry — the
+        alternative is unbounded memory growth behind a hook that will never drain.
         """
         if not pending:
             return
         queue = self._ensure_worker()
         for item in pending:
-            queue.put_nowait(item)
+            try:
+                queue.put_nowait(item)
+            except asyncio.QueueFull:
+                self._dropped += 1
+                if self._dropped == 1:
+                    self._logger.warning(
+                        "rejection report backlog hit its cap of %d; a reporting hook "
+                        "is not returning — dropping further reports until it drains",
+                        MAX_QUEUED_REPORTS,
+                    )
         await asyncio.sleep(0)
 
     def _ensure_worker(self) -> asyncio.Queue[PendingRejection | None]:
         if self._queue is None:
-            self._queue = asyncio.Queue()
+            self._queue = asyncio.Queue(maxsize=MAX_QUEUED_REPORTS)
+            self._dropped = 0
             self._worker = asyncio.create_task(
                 self._run(self._queue), name="pocketrocks-rejection-reporter"
             )
@@ -155,15 +181,20 @@ class RejectionReporter:
         self._queue, self._worker = None, None
         if queue is None or worker is None:
             return
-        queue.put_nowait(None)
+        # A stuck hook may have filled the queue; the sentinel is best-effort, and
+        # if it can't land the worker is wedged anyway and the timeout/cancel below
+        # is what stops it.
+        with contextlib.suppress(asyncio.QueueFull):
+            queue.put_nowait(None)
         try:
             await asyncio.wait({worker}, timeout=timeout_s)
         finally:
             if not worker.done():
                 self._logger.warning(
-                    "dropping %d unreported decision rejection(s): a reporting hook did "
-                    "not return within %s seconds",
+                    "dropping %d buffered + %d over-cap decision rejection(s): a "
+                    "reporting hook did not return within %s seconds",
                     queue.qsize(),
+                    self._dropped,
                     timeout_s,
                 )
                 worker.cancel()

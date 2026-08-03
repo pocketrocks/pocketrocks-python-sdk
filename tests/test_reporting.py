@@ -4,7 +4,10 @@ import asyncio
 import logging
 from dataclasses import replace
 
+import pytest
+
 from pocketrocks import BotDecision, Suit
+from pocketrocks import _reporting as reporting
 from pocketrocks._reporting import PendingRejection, RejectionReporter
 from pocketrocks.exceptions import InvalidBotDecision
 from pocketrocks.testing import scenario
@@ -77,5 +80,40 @@ async def test_drain_still_cancels_a_hook_that_never_returns() -> None:
     reporter = RejectionReporter(logging.getLogger("test"))
     await reporter.hand_off(_pending(Hanger(), "stuck"))
     await started.wait()
+
+    await asyncio.wait_for(reporter.drain(timeout_s=0.05), timeout=2.0)
+
+
+async def test_a_stuck_hook_does_not_grow_the_backlog_without_bound(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # With a hook that never returns, the worker is wedged on report 0 and every
+    # later rejection is buffered. The queue must stay bounded rather than pin an
+    # unbounded pile of DecisionContexts and eventually exhaust the process.
+    monkeypatch.setattr(reporting, "MAX_QUEUED_REPORTS", 4)
+    started = asyncio.Event()
+
+    class Hanger:
+        async def on_runtime_event(self, event: RuntimeEvent) -> None:
+            started.set()
+            await asyncio.Event().wait()  # never returns
+
+        async def on_error(self, error: Exception) -> None:
+            return None
+
+    reporter = RejectionReporter(logging.getLogger("test"))
+    hanger = Hanger()
+
+    await reporter.hand_off(_pending(hanger, "0"))  # worker takes this and blocks
+    await started.wait()
+
+    with caplog.at_level(logging.WARNING):
+        for i in range(1, 50):  # flood well past the cap
+            await reporter.hand_off(_pending(hanger, str(i)))
+
+    assert reporter._queue is not None
+    assert reporter._queue.qsize() <= 4
+    assert any("backlog hit its cap" in r.message for r in caplog.records)
 
     await asyncio.wait_for(reporter.drain(timeout_s=0.05), timeout=2.0)
