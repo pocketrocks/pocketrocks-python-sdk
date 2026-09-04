@@ -6,6 +6,10 @@ import pytest
 from pocketrocks.sim.batch_engine import BatchSimEngine
 from pocketrocks.sim.constants import ACTION_WIRE_IDS, VALUE_CHARTS
 from pocketrocks.sim.engine import SimEngine
+from pocketrocks.sim.ruleset import PaymentRule, Ruleset
+
+# A negative-cell hump sitting exactly on the sum floor, and a negative-tailed hump.
+_NEGATIVE_CHARTS: tuple[tuple[int, ...], ...] = ((-20, 0, 20, 20, 10, 8), (-4, 8, 16, 18, 8, -4))
 
 
 @pytest.mark.parametrize("player_count", [3, 4, 5])
@@ -75,6 +79,63 @@ def test_batch_setup_validates_homogeneous_inputs() -> None:
         )
     with pytest.raises(ValueError, match="3-5"):
         BatchSimEngine.start(player_count=2, seeds=("one",))
+    with pytest.raises(ValueError, match="payment_rules"):
+        BatchSimEngine.start(
+            player_count=3,
+            seeds=("one", "two"),
+            payment_rules=("second-price",),
+        )
+    with pytest.raises(ValueError, match="player_count is required"):
+        BatchSimEngine.start(seeds=("one",))
+
+
+def test_batch_setup_validates_rules_and_charts_naming_the_constraint() -> None:
+    with pytest.raises(ValueError, match="payment rule"):
+        BatchSimEngine.start(
+            player_count=3,
+            seeds=("one",),
+            payment_rules=("third-price",),  # type: ignore[arg-type]  # the point of the test
+        )
+    with pytest.raises(ValueError, match="sum floor"):
+        BatchSimEngine.start(player_count=3, seeds=("one",), value_charts=((0, 2, 4, 6, 8, 10),))
+    with pytest.raises(ValueError, match="A-E"):
+        BatchSimEngine.start(player_count=3, seeds=("one",), value_charts=("F",))
+
+
+def test_batch_start_accepts_rulesets_or_per_row_sequences_but_not_both() -> None:
+    rulesets = (
+        Ruleset(player_count=4, value_chart="B", payment_rule="second-price"),
+        Ruleset(player_count=4, value_chart=_NEGATIVE_CHARTS[0], objectives_enabled=False),
+    )
+    from_rulesets = BatchSimEngine.start(seeds=("one", "two"), rulesets=rulesets)
+    from_rows = BatchSimEngine.start(
+        player_count=4,
+        seeds=("one", "two"),
+        value_charts=("b", _NEGATIVE_CHARTS[0]),
+        payment_rules=("second-price", "first-price"),
+        objectives_enabled=(True, False),
+    )
+    assert from_rulesets.rulesets == from_rows.rulesets == rulesets
+    assert from_rulesets.player_count == 4
+    assert from_rulesets.payment_rules == ("second-price", "first-price")
+    assert from_rulesets.value_charts.tolist() == [
+        list(VALUE_CHARTS["B"]),
+        list(_NEGATIVE_CHARTS[0]),
+    ]
+    assert from_rulesets.objectives_enabled.tolist() == [True, False]
+    np.testing.assert_array_equal(from_rulesets.hand_cards, from_rows.hand_cards)
+
+    with pytest.raises(ValueError, match="not both"):
+        BatchSimEngine.start(seeds=("one", "two"), rulesets=rulesets, value_charts=("A", "A"))
+    with pytest.raises(ValueError, match="rulesets length"):
+        BatchSimEngine.start(seeds=("one",), rulesets=rulesets)
+    with pytest.raises(ValueError, match="one player count"):
+        BatchSimEngine.start(
+            seeds=("one", "two"),
+            rulesets=(Ruleset(player_count=3), Ruleset(player_count=4)),
+        )
+    with pytest.raises(ValueError, match="player_count"):
+        BatchSimEngine.start(player_count=3, seeds=("one", "two"), rulesets=rulesets)
 
 
 def test_batch_setup_uses_compact_numeric_arrays() -> None:
@@ -123,12 +184,17 @@ def _assert_game_state_matches(
 @pytest.mark.parametrize("player_count", [3, 4, 5])
 def test_batch_transitions_match_scalar_complete_games(player_count: int) -> None:
     seeds = tuple(f"batch-game-{player_count}-{index}" for index in range(7))
-    charts = tuple(tuple(VALUE_CHARTS)[index % 5] for index in range(len(seeds)))
-    objective_flags = tuple(index % 2 == 0 for index in range(len(seeds)))
+    # Fixed keys and inline negative-cell charts side by side, under both rules.
+    charts: tuple[str | tuple[int, ...], ...] = (*VALUE_CHARTS, *_NEGATIVE_CHARTS)
+    rules: tuple[PaymentRule, ...] = tuple(
+        "second-price" if index % 2 else "first-price" for index in range(len(seeds))
+    )
+    objective_flags = tuple(index % 3 != 1 for index in range(len(seeds)))
     batch = BatchSimEngine.start(
         player_count=player_count,
         seeds=seeds,
         value_charts=charts,
+        payment_rules=rules,
         objectives_enabled=objective_flags,
     )
     scalars = [
@@ -136,10 +202,12 @@ def test_batch_transitions_match_scalar_complete_games(player_count: int) -> Non
             player_count,
             seed,
             value_chart=charts[index],
+            payment_rule=rules[index],
             objectives_enabled=objective_flags[index],
         )
         for index, seed in enumerate(seeds)
     ]
+    assert any(rule == "second-price" for rule in batch.payment_rules)
 
     for turn_index in range(30):
         action_ids = batch.flip_actions()
@@ -245,3 +313,40 @@ def test_scalar_engine_is_a_size_one_batch_facade() -> None:
     assert isinstance(engine._batch, BatchSimEngine)
     assert engine._batch.batch_size == 1
     assert engine._batch.player_count == 3
+    assert engine._batch.rulesets == (engine.ruleset,)
+
+
+def test_scores_are_exact_at_the_envelope_extremes_and_match_scalar() -> None:
+    # Every one of the 30 cards scored at -20 or at +20: the widest item value the
+    # envelope allows (+/-600). int16 holds it, and the bounds check must not fire.
+    chart = (-20, -20, 20, 20, 20, 20)
+    batch = BatchSimEngine.start(player_count=3, seeds=("low", "high"), value_charts=(chart, chart))
+    batch.initial_info_counts[0] = 0  # every suit indexes cell 0 -> -20
+    batch.initial_info_counts[1] = 5  # every suit indexes cell 5 -> +20
+    batch.won_counts[:, 0, :] = 6  # seat 0 holds all 30 cards in both rows
+
+    scores = batch.scores()
+    assert scores.items.dtype == np.int16
+    assert scores.items[0].tolist() == [-600, 0, 0]
+    assert scores.items[1].tolist() == [600, 0, 0]
+    assert scores.total[0, 0] == 30 - 600
+    assert scores.total[1, 0] == 30 + 600
+    assert batch.rankings()[0].tolist() == [1, 2, 0]  # the negative seat ranks last
+
+    for row, counts in ((0, (0, 0, 0, 0, 0)), (1, (5, 5, 5, 5, 5))):
+        scalar = SimEngine(3, "irrelevant", value_chart=chart)
+        scalar.initial_info_counts = counts
+        scalar.players[0].won_suits = [suit for suit in range(1, 6) for _ in range(6)]
+        rows = scalar.score()
+        assert [r.items_value for r in rows] == scores.items[row].tolist()
+        assert [r.total for r in rows] == scores.total[row].tolist()
+
+
+def test_scores_bounds_check_trips_on_a_chart_outside_the_envelope() -> None:
+    batch = BatchSimEngine.start(player_count=3, seeds=("corrupt",))
+    batch.won_counts[0, 0, :] = 6
+    batch.initial_info_counts[0] = 5
+    batch.value_charts[0, 5] = 21  # only reachable by mutating state behind resolve_chart
+
+    with pytest.raises(AssertionError, match="envelope bound"):
+        batch.scores()

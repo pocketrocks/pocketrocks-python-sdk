@@ -13,19 +13,36 @@ from typing import Any
 
 from pocketrocks.protocol import build_decision_context
 
-from .constants import ACTION_WIRE_IDS, INFO_CARDS_PER_PLAYER, STARTING_CASH
+from .constants import ACTION_WIRE_IDS, INFO_CARDS_PER_PLAYER, STARTING_CASH, VALUE_CHARTS
 from .context import build_sim_request_and_context
 from .engine import SimEngine
+from .ruleset import Ruleset
+
+
+def trace_ruleset(trace: dict[str, Any]) -> Ruleset:
+    """The ruleset a trace was recorded under.
+
+    ``valueChartKey`` names a fixed chart; any other key (the exporter writes
+    ``"custom"``) means the inline ``valueChart`` cells are the selection.
+    ``paymentRule`` defaults to first-price because traces predating the field
+    were all recorded under it.
+    """
+    key = str(trace["valueChartKey"]).upper()
+    chart: str | tuple[int, ...] = (
+        key if key in VALUE_CHARTS else tuple(int(cell) for cell in trace["valueChart"])
+    )
+    return Ruleset(
+        player_count=int(trace["playerCount"]),
+        value_chart=chart,
+        payment_rule=trace.get("paymentRule", "first-price"),
+        objectives_enabled=bool(trace.get("objectivesEnabled", True)),
+    )
 
 
 def replay_trace(trace: dict[str, Any]) -> None:
     setup = trace["setup"]
     player_count = int(trace["playerCount"])
-    engine = SimEngine(
-        player_count,
-        str(trace["seed"]),
-        value_chart=str(trace["valueChartKey"]),
-    )
+    engine = SimEngine(player_count, str(trace["seed"]), ruleset=trace_ruleset(trace))
     label = f"trace {trace['seed']}"
 
     assert list(engine.debug_item_deck_order) == setup["itemDeckOrder"], f"{label}: item deck order"

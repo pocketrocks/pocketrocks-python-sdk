@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from pocketrocks import BotDecision, DecisionContext, PocketRocksBot
-from pocketrocks.sim import run_games
+from pocketrocks.sim import Ruleset, run_games
 
 
 class MaxBot(PocketRocksBot):
@@ -44,6 +44,32 @@ def test_reproducible_with_same_seeds() -> None:
     a = run_games([MaxBot, PassBot, PassBot], 3, seeds=["x", "y", "z"])
     b = run_games([MaxBot, PassBot, PassBot], 3, seeds=["x", "y", "z"])
     assert [s.mean_score for s in a.bots] == [s.mean_score for s in b.bots]
+
+
+def test_run_games_takes_a_ruleset_or_loose_rule_keywords() -> None:
+    seeds = ["x", "y", "z"]
+    first = run_games([MaxBot, PassBot, PassBot], 3, seeds=seeds)
+    second_loose = run_games(
+        [MaxBot, PassBot, PassBot], 3, seeds=seeds, payment_rule="second-price"
+    )
+    second_ruleset = run_games(
+        [MaxBot, PassBot, PassBot],
+        3,
+        seeds=seeds,
+        ruleset=Ruleset(player_count=3, payment_rule="second-price"),
+    )
+    assert second_loose.bots[0].mean_score == second_ruleset.bots[0].mean_score
+    # Against passers MaxBot pays its own bid under first-price and nothing under
+    # second-price, so the rule visibly changes the outcome of the same seeds.
+    assert second_loose.bots[0].mean_score > first.bots[0].mean_score
+    assert [r.history[0].paid for r in second_loose.results] == [0, 0, 0]
+
+
+def test_run_games_rejects_ruleset_mixed_with_loose_keywords() -> None:
+    with pytest.raises(ValueError, match="not both"):
+        run_games([MaxBot, PassBot, PassBot], 1, ruleset=Ruleset(player_count=3), value_chart="B")
+    with pytest.raises(ValueError, match="implies 3 players"):
+        run_games([MaxBot, PassBot, PassBot], 1, ruleset=Ruleset(player_count=5))
 
 
 def test_factory_provider_works() -> None:

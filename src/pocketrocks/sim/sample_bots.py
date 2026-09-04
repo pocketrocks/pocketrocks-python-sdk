@@ -1,5 +1,13 @@
 """Ready-made opponents for local training. Import them, don't copy them:
-``run_games([MyBot, GreedyValueBot, ValueTraderBot], 1000)``."""
+``run_games([MyBot, GreedyValueBot, ValueTraderBot], 1000)``.
+
+The two value-estimating bots are rule-conditional: under first-price they
+shade (cap the bid below their estimate to conserve cash); under second-price
+they bid their estimate, because paying the runner-up price makes truthful
+bidding dominant. Tell them the rule at construction
+(``ValueTraderBot(payment_rule="second-price")``); the context does not carry
+it yet.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +15,8 @@ import random
 
 from pocketrocks.bot import PocketRocksBot
 from pocketrocks.types import BotDecision, DecisionContext
+
+from .ruleset import PaymentRule
 
 
 class AlwaysPassBot(PocketRocksBot):
@@ -36,6 +46,10 @@ class RandomBot(PocketRocksBot):
 class GreedyValueBot(PocketRocksBot):
     """Bids proportionally to the value its own hand implies the offered suits hold."""
 
+    def __init__(self, payment_rule: PaymentRule = "first-price") -> None:
+        super().__init__()
+        self.payment_rule = payment_rule
+
     async def choose_decision(self, context: DecisionContext) -> BotDecision:
         if context.decision_kind != "submitBid":
             return BotDecision.select_info_to_reveal(0)
@@ -46,12 +60,18 @@ class GreedyValueBot(PocketRocksBot):
                 own_signal = sum(1 for s in context.current_hand_suit_ids if s == suit_id)
                 revealed = context.revealed_info_counts_by_suit[suit_id - 1]
                 estimate += context.value_chart[min(own_signal + revealed, 5)]
-        bid = min(context.legal_max_amount or 0, estimate, max(0, cash // 2 + estimate // 2))
+        bid = min(context.legal_max_amount or 0, estimate)
+        if self.payment_rule == "first-price":
+            bid = min(bid, max(0, cash // 2 + estimate // 2))  # shade to conserve cash
         return BotDecision.submit_bid(bid)
 
 
 class ValueTraderBot(PocketRocksBot):
     """Prices offered resources from the active chart and known information."""
+
+    def __init__(self, payment_rule: PaymentRule = "first-price") -> None:
+        super().__init__()
+        self.payment_rule = payment_rule
 
     async def choose_decision(self, context: DecisionContext) -> BotDecision:
         if context.decision_kind != "submitBid":
@@ -74,8 +94,8 @@ class ValueTraderBot(PocketRocksBot):
             estimated_value += context.value_chart[known_count]
             resource_count += 1
 
-        cash = context.cash_by_seat[context.bot_seat]
-        cash_budget = resource_count * cash // 3
-        return BotDecision.submit_bid(
-            min(context.legal_max_amount or 0, estimated_value, cash_budget)
-        )
+        bid = min(context.legal_max_amount or 0, estimated_value)
+        if self.payment_rule == "first-price":
+            cash = context.cash_by_seat[context.bot_seat]
+            bid = min(bid, resource_count * cash // 3)  # shade to conserve cash
+        return BotDecision.submit_bid(bid)

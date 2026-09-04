@@ -26,9 +26,15 @@ from .constants import (
     OBJECTIVE_PAYOUTS,
     OBJECTIVES_PER_GAME,
     STARTING_CASH,
-    VALUE_CHARTS,
 )
 from .rng import batch_shuffled_many
+from .ruleset import (
+    CHART_CELL_CAP,
+    PaymentRule,
+    Ruleset,
+    coerce_ruleset,
+    compute_paid_batch,
+)
 
 
 @dataclass(frozen=True)
@@ -57,6 +63,11 @@ _INVEST_PAYOUT_BY_ACTION_ID = {
 }
 _AUCTION_1_ID = ACTION_WIRE_IDS["Auction1"]
 _AUCTION_2_ID = ACTION_WIRE_IDS["Auction2"]
+# The envelope bounds a seat's item value: every won card scores at most one
+# cell, and a cell is within +/-CHART_CELL_CAP. Scores are int16, which has
+# plenty of headroom, but negative cells make the bound worth asserting rather
+# than assuming (see ``BatchSimEngine.scores``).
+_ITEMS_VALUE_BOUND = CHART_CELL_CAP * len(ITEM_DECK_SUITS)
 
 
 def _objective_met(
@@ -93,15 +104,27 @@ class BatchSimEngine:
     def __init__(
         self,
         *,
-        player_count: int,
         seeds: tuple[str, ...],
-        value_chart_keys: tuple[str, ...],
-        objectives_enabled: tuple[bool, ...],
+        rulesets: tuple[Ruleset, ...],
     ) -> None:
+        if len(rulesets) != len(seeds):
+            raise ValueError("rulesets length must match seeds")
+        player_counts = {ruleset.player_count for ruleset in rulesets}
+        if len(player_counts) != 1:
+            raise ValueError("a batch shares one player count across every ruleset")
+        player_count = player_counts.pop()
+        objectives_enabled = tuple(ruleset.objectives_enabled for ruleset in rulesets)
         self.player_count = player_count
         self.seeds = seeds
         self.batch_size = len(seeds)
-        self.value_chart_keys = value_chart_keys
+        self.rulesets = rulesets
+        self.payment_rules: tuple[PaymentRule, ...] = tuple(
+            ruleset.payment_rule for ruleset in rulesets
+        )
+        self._second_price: NDArray[np.bool_] = np.asarray(
+            [rule == "second-price" for rule in self.payment_rules],
+            dtype=np.bool_,
+        )
         self.objectives_enabled = np.asarray(objectives_enabled, dtype=np.bool_)
 
         action_ids = tuple(ACTION_WIRE_IDS[action] for action in ACTION_DECK)
@@ -173,7 +196,7 @@ class BatchSimEngine:
         self.loan_principal: NDArray[np.int16] = np.zeros_like(self.cash)
         self.investment_values: NDArray[np.int16] = np.zeros_like(self.cash)
         self.value_charts: NDArray[np.int16] = np.asarray(
-            [VALUE_CHARTS[key] for key in value_chart_keys],
+            [ruleset.chart for ruleset in rulesets],
             dtype=np.int16,
         )
         self.action_positions: NDArray[np.uint8] = np.zeros(
@@ -207,37 +230,68 @@ class BatchSimEngine:
     def start(
         cls,
         *,
-        player_count: int,
+        player_count: int | None = None,
         seeds: Sequence[str | int],
-        value_charts: Sequence[str] | None = None,
+        value_charts: Sequence[str | Sequence[int]] | None = None,
         objectives_enabled: Sequence[bool] | None = None,
+        payment_rules: Sequence[PaymentRule] | None = None,
+        rulesets: Sequence[Ruleset] | None = None,
     ) -> BatchSimEngine:
-        if not 3 <= player_count <= 5:
-            raise ValueError("PocketRocks supports 3-5 players")
+        """Start one batch of games.
+
+        Either pass one ``Ruleset`` per seed via ``rulesets`` (``player_count``
+        may then be omitted), or ``player_count`` plus the per-row
+        ``value_charts`` (a fixed key or an inline 6-tuple each),
+        ``objectives_enabled`` and ``payment_rules`` sequences, each defaulting to
+        the shipped rules. The two styles cannot be mixed.
+        """
         normalized_seeds = tuple(str(seed) for seed in seeds)
         if not normalized_seeds:
             raise ValueError("BatchSimEngine requires at least one seed")
         batch_size = len(normalized_seeds)
-        chart_keys = (
-            ("A",) * batch_size
-            if value_charts is None
-            else tuple(chart.upper() for chart in value_charts)
+        if rulesets is not None:
+            loose = (value_charts, objectives_enabled, payment_rules)
+            if any(argument is not None for argument in loose):
+                raise ValueError(
+                    "pass either rulesets= or the per-row value_charts/objectives_enabled/"
+                    "payment_rules sequences, not both"
+                )
+            resolved = tuple(rulesets)
+            if len(resolved) != batch_size:
+                raise ValueError("rulesets length must match seeds")
+            if player_count is not None and any(r.player_count != player_count for r in resolved):
+                raise ValueError("every ruleset.player_count must equal player_count")
+            return cls(seeds=normalized_seeds, rulesets=resolved)
+        if player_count is None:
+            raise ValueError("player_count is required unless rulesets= is given")
+        if not 3 <= player_count <= 5:
+            raise ValueError("PocketRocks supports 3-5 players")
+        chart_selections: tuple[str | Sequence[int], ...] = (
+            ("A",) * batch_size if value_charts is None else tuple(value_charts)
         )
-        if len(chart_keys) != batch_size:
+        if len(chart_selections) != batch_size:
             raise ValueError("value_charts length must match seeds")
-        unknown_charts = tuple(key for key in chart_keys if key not in VALUE_CHARTS)
-        if unknown_charts:
-            raise ValueError(f"unknown value charts: {unknown_charts!r}")
         objective_flags = (
             (True,) * batch_size if objectives_enabled is None else tuple(objectives_enabled)
         )
         if len(objective_flags) != batch_size:
             raise ValueError("objectives_enabled length must match seeds")
+        first_price: PaymentRule = "first-price"
+        rules = (first_price,) * batch_size if payment_rules is None else tuple(payment_rules)
+        if len(rules) != batch_size:
+            raise ValueError("payment_rules length must match seeds")
         return cls(
-            player_count=player_count,
             seeds=normalized_seeds,
-            value_chart_keys=chart_keys,
-            objectives_enabled=objective_flags,
+            rulesets=tuple(
+                coerce_ruleset(
+                    player_count=player_count,
+                    ruleset=None,
+                    value_chart=chart,
+                    payment_rule=rule,
+                    objectives_enabled=flag,
+                )
+                for chart, rule, flag in zip(chart_selections, rules, objective_flags, strict=True)
+            ),
         )
 
     def game_over_mask(self) -> NDArray[np.bool_]:
@@ -292,8 +346,10 @@ class BatchSimEngine:
             selected = unresolved & (effective[rows, seats] == highest)
             winners[selected] = seats[selected].astype(np.int8, copy=False)
             unresolved[selected] = False
+        # The payment seam: winner selection above is rule-independent; only the
+        # price depends on the row's payment rule.
         paid = np.zeros(self.batch_size, dtype=np.int16)
-        paid[active] = highest[active]
+        paid[active] = compute_paid_batch(self._second_price, effective)[active]
         active_rows = rows[active]
         active_winners = winners[active].astype(np.intp, copy=False)
         self.cash[active_rows, active_winners] -= paid[active]
@@ -447,6 +503,11 @@ class BatchSimEngine:
             ),
             dtype=np.int16,
         )
+        if items.size and int(np.abs(items).max()) > _ITEMS_VALUE_BOUND:
+            raise AssertionError(
+                f"item values exceed the envelope bound of +/-{_ITEMS_VALUE_BOUND}; a value "
+                "chart or won-count array has been corrupted"
+            )
         payouts = np.asarray(
             [OBJECTIVE_PAYOUTS.get(objective_id, 0) for objective_id in range(1, 31)],
             dtype=np.int16,

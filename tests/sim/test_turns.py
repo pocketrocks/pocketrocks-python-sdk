@@ -4,11 +4,16 @@ import pytest
 
 from pocketrocks.internal.bot_wire_v2 import AuctionResolvedEvent, TurnOpenedEvent
 from pocketrocks.sim.engine import SimEngine
+from pocketrocks.sim.ruleset import PaymentRule
+
+RULES: tuple[PaymentRule, ...] = ("first-price", "second-price")
 
 
-def _engine_with(action: str, seed: str = "t") -> SimEngine:
+def _engine_with(
+    action: str, seed: str = "t", *, payment_rule: PaymentRule = "first-price"
+) -> SimEngine:
     """An engine whose next action is forced to ``action`` (test-only surgery)."""
-    engine = SimEngine(3, seed)
+    engine = SimEngine(3, seed, payment_rule=payment_rule)
     engine.action_deck[0] = action
     return engine
 
@@ -75,24 +80,76 @@ def test_scalar_facade_reveal_mutates_aliased_lists_in_place() -> None:
     assert player.revealed_suits == [4, 2, 2]
 
 
-def test_bid_clamped_to_cash_on_normal_actions() -> None:
-    engine = _engine_with("Auction1")
+@pytest.mark.parametrize("rule", RULES)
+def test_bid_clamped_to_cash_on_normal_actions(rule: PaymentRule) -> None:
+    engine = _engine_with("Auction1", payment_rule=rule)
     engine.flip_action()
     outcome = engine.resolve([99, 0, 0])
     assert outcome.effective_bids[0] == 30  # clamped, not zeroed
     assert outcome.winner_seat == 0
-    assert outcome.paid == 30
+    # Under second-price a single positive bid pays 0: there is no runner-up bid.
+    assert outcome.paid == (30 if rule == "first-price" else 0)
+    assert engine.players[0].cash == 30 - outcome.paid
 
 
-def test_loan_allows_bid_up_to_cash_plus_principal() -> None:
-    engine = _engine_with("Loan20")
+@pytest.mark.parametrize("rule", RULES)
+def test_loan_allows_bid_up_to_cash_plus_principal(rule: PaymentRule) -> None:
+    engine = _engine_with("Loan20", payment_rule=rule)
     engine.flip_action()
     assert engine.legal_max_bid(0) == 50
-    outcome = engine.resolve([50, 0, 0])
-    assert outcome.paid == 50
-    # paid 50, received 20 principal
-    assert engine.players[0].cash == 30 - 50 + 20
+    outcome = engine.resolve([50, 10, 0])
+    expected_paid = 50 if rule == "first-price" else 10
+    assert outcome.paid == expected_paid
+    # paid the auction price, received 20 principal; the credit is rule-independent
+    assert engine.players[0].cash == 30 - expected_paid + 20
     assert engine.players[0].loans == [20]
+
+
+def test_second_price_winner_pays_the_runner_up_bid() -> None:
+    engine = _engine_with("Auction1", payment_rule="second-price")
+    engine.flip_action()
+    outcome = engine.resolve([30, 10, 5])
+    assert outcome.winner_seat == 0
+    assert outcome.paid == 10
+    assert engine.players[0].cash == 20
+    assert engine.players[1].cash == 30  # only the winner pays
+
+
+def test_second_price_tie_pays_the_tied_amount_and_keeps_the_tiebreak_rule() -> None:
+    engine = _engine_with("Auction1", payment_rule="second-price")
+    engine.tiebreak_seat = 0
+    engine.flip_action()
+    outcome = engine.resolve([12, 12, 0])
+    assert outcome.winner_seat == 1  # first seat clockwise after the leader, as first-price
+    assert outcome.paid == 12
+    assert engine.tiebreak_seat == 1
+
+
+def test_second_price_prices_over_clamped_effective_bids() -> None:
+    engine = _engine_with("Auction1", payment_rule="second-price")
+    engine.flip_action()
+    outcome = engine.resolve([99, 99, 0])
+    assert outcome.effective_bids == (30, 30, 0)
+    assert outcome.paid == 30  # runner-up of the clamped bids, not of the raw ones
+
+
+def test_second_price_investment_locks_the_price_paid() -> None:
+    engine = _engine_with("Invest5", payment_rule="second-price")
+    engine.flip_action()
+    engine.resolve([7, 3, 0])
+    assert engine.players[0].cash == 27
+    assert engine.players[0].investments == [(3, 5)]
+
+
+def test_second_price_history_and_event_record_bids_and_price_separately() -> None:
+    engine = _engine_with("Auction1", payment_rule="second-price")
+    engine.flip_action()
+    outcome = engine.resolve([9, 4, 1])
+    record = engine.history[-1]
+    assert record.paid == outcome.paid == 4
+    assert record.effective_bids == (9, 4, 1)
+    event = [e for e in engine.events if isinstance(e, AuctionResolvedEvent)][-1]
+    assert event.bids_by_seat == (9, 4, 1)  # the wire carries bids; the price is derived
 
 
 def test_tie_goes_clockwise_after_leader_and_marker_rotates() -> None:
@@ -104,8 +161,9 @@ def test_tie_goes_clockwise_after_leader_and_marker_rotates() -> None:
     assert engine.tiebreak_seat == 2
 
 
-def test_all_zero_bids_still_selects_winner_for_free() -> None:
-    engine = _engine_with("Auction1")
+@pytest.mark.parametrize("rule", RULES)
+def test_all_zero_bids_still_selects_winner_for_free(rule: PaymentRule) -> None:
+    engine = _engine_with("Auction1", payment_rule=rule)
     engine.tiebreak_seat = 0
     engine.flip_action()
     outcome = engine.resolve([0, 0, 0])

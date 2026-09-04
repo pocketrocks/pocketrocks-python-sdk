@@ -6,7 +6,7 @@ import pytest
 
 from pocketrocks import BotDecision, DecisionContext, PocketRocksBot
 from pocketrocks import _reporting as reporting
-from pocketrocks.sim import LocalGame
+from pocketrocks.sim import LocalGame, Ruleset, compute_paid
 from pocketrocks.types import RuntimeEvent
 
 
@@ -46,6 +46,37 @@ def test_deterministic_game() -> None:
     assert a.history == b.history
     assert len(a.history) > 0
     assert a.seats == ("MaxBot", "PassBot", "PassBot")
+
+
+def test_negative_cell_second_price_game_plays_to_completion() -> None:
+    ruleset = Ruleset(
+        player_count=3, value_chart=(-20, 0, 20, 20, 10, 8), payment_rule="second-price"
+    )
+    game = LocalGame([MaxBot(), MaxBot(), PassBot()], seed="negative-second-12", ruleset=ruleset)
+    assert game.ruleset is ruleset
+    result = game.play()
+
+    assert len(result.history) > 0
+    for turn in result.history:
+        # The price is the runner-up effective bid, never the winner's own.
+        assert turn.paid == compute_paid("second-price", turn.effective_bids)
+        assert turn.paid == sorted(turn.effective_bids)[-2]
+    assert any(turn.paid > 0 for turn in result.history)
+    for row in result.scores:
+        components = (row.cash, row.items_value, row.objectives_value, row.investments_value)
+        assert row.total == sum(components) - row.loans_value
+    # Cells at -20 make an item value negative; the sign carries through to a
+    # negative final total, and the ranking still orders by total.
+    assert min(row.items_value for row in result.scores) < 0
+    assert min(row.total for row in result.scores) < 0
+    assert result.ranking == tuple(sorted(range(3), key=lambda seat: -result.scores[seat].total))
+
+
+def test_local_game_rejects_ruleset_mixed_with_loose_keywords() -> None:
+    with pytest.raises(ValueError, match="not both"):
+        LocalGame([PassBot(), PassBot(), PassBot()], seed=1, ruleset=Ruleset(3), value_chart="B")
+    with pytest.raises(ValueError, match="implies 3 players"):
+        LocalGame([PassBot(), PassBot(), PassBot()], seed=1, ruleset=Ruleset(player_count=4))
 
 
 def test_crash_and_unrepairable_illegal_fall_back_like_a_timeout() -> None:

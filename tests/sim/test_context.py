@@ -56,6 +56,29 @@ def test_state_evolves_into_context() -> None:
     assert context.tiebreak_seat == 0
 
 
+def test_direct_context_reflects_the_second_price_paid() -> None:
+    # The sim shapes the context from engine state, so it is right under either
+    # rule. Wire reconstruction (``build_decision_context``) still assumes
+    # first-price until bot-wire v3 carries ``paymentRule`` (#22), so the
+    # direct-vs-reconstructed parity below is asserted for first-price only.
+    engine = SimEngine(3, "ctx-second-price", payment_rule="second-price")
+    engine.action_deck[0] = "Auction1"
+    engine.tiebreak_seat = 0
+    engine.flip_action()
+    outcome = engine.resolve([9, 4, 0])
+    assert outcome.paid == 4
+    context = build_sim_context(engine, seat=0, kind="submitBid", budget_ms=1_000)
+    assert context.cash_by_seat == (26, 30, 30)
+    assert context.legal_max_amount == 26
+
+
+def test_direct_context_carries_negative_chart_cells() -> None:
+    engine = SimEngine(3, "ctx-negative", value_chart=(-20, 0, 20, 20, 10, 8))
+    engine.flip_action()
+    context = build_sim_context(engine, seat=0, kind="submitBid", budget_ms=1_000)
+    assert context.value_chart == (-20, 0, 20, 20, 10, 8)
+
+
 def test_context_does_not_reconstruct_event_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
