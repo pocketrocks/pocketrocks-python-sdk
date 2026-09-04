@@ -124,6 +124,40 @@ the tip of `develop`. There is no staging branch between your merge and them.
   fixtures are regenerated. A mismatch tells users their local simulation results
   may diverge from the live server.
 
+## Releasing a rules change
+
+The golden traces under `tests/fixtures/botsdk/` pin this engine to games the
+real TS engine played, gated on `RULES_VERSION`. When the canonical game rules
+change, the release routine is:
+
+1. **Bump both version numbers together.** `rulesVersion` in the main repo's
+   `apps/server/scripts/export-bot-sdk-fixtures.ts` and `RULES_VERSION` in
+   `src/pocketrocks/_version.py` here. They are the same integer; a mismatch is
+   the conformance suite's first failure.
+2. **Regenerate the fixtures in the main repo:**
+   `yarn workspace @pocketrocks/server fixtures:bot-sdk <outDir>`. Traces are
+   only ever produced by the TS engine — never by this SDK, and never by hand.
+3. **Copy the output over `tests/fixtures/botsdk/`** here, then port the rules
+   change into `src/pocketrocks/sim/` (the batch kernel in `batch_engine.py`;
+   `constants.py` if a table changed; `ruleset.py` if the ruleset gained a
+   field or the constraint envelope moved).
+4. **Run the conformance suite:** `uv run pytest tests/sim/test_conformance.py`.
+   It gates on version agreement and replays every trace end to end. A failure
+   is a rules divergence: fix the engine, never the fixture.
+5. **Bump `__version__`** and merge to `develop` — the branch installs and the
+   staleness check both target it, so the merge is the release.
+
+Traces carry the rules version they were recorded at, and each slice of the
+ruleset space has a minimum version (the table at the top of
+`tests/sim/test_conformance.py`). A trace stays a valid oracle from that
+version onward: rules version 2 added the payment rule and inline charts
+without changing how a first-price fixed-chart game plays, so the version-1
+first-price A-E traces still pin that slice. If a change alters first-price
+fixed-chart play, raise that slice's minimum to the new version too — every
+existing trace then fails until step 2 regenerates it, which is the point.
+Second-price and custom-chart slices need traces the exporter recorded with
+those fields (version 2 or later).
+
 ## Where things go
 
 Read the docs policy in [`docs/README.md`](docs/README.md) before adding any

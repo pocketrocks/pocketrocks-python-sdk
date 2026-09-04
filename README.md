@@ -70,16 +70,69 @@ You don't need a server, an API key, or a bot ID to develop your strategy.
 entirely in-process, against the exact same `PocketRocksBot` subclass you
 deploy live — no separate "training" API to learn.
 
+### Choosing the rules: `Ruleset`
+
+Every entry point below plays under a `Ruleset` — the same four facts the
+live server's ruleset carries, in snake_case:
+
+```python
+from pocketrocks.sim import Ruleset
+
+Ruleset(
+    player_count=3,  # 3-5
+    value_chart="A",  # a fixed chart key A-E, or an inline chart (below)
+    payment_rule="first-price",  # or "second-price"
+    objectives_enabled=True,
+)
+```
+
+The five fixed value charts (index = cards of one suit you hold, 0-5):
+
+| Key | Cells | Shape |
+| --- | --- | --- |
+| `A` | `(0, 4, 8, 12, 16, 20)` | linear, ascending |
+| `B` | `(20, 16, 12, 8, 4, 0)` | linear, descending |
+| `C` | `(0, 2, 5, 9, 14, 20)` | curved, ascending |
+| `D` | `(20, 18, 15, 11, 6, 0)` | curved, descending |
+| `E` | `(0, 4, 10, 18, 6, 0)` | hump |
+
+A **custom value chart** is an inline 6-tuple instead of a key. Cells may be
+negative. It must sit inside the constraint envelope the server generates
+custom charts under — every cell within ±20, at most one turning point, a sum
+of at least 38 (so `E` is the minimum any chart totals), and valleys (fall then
+rise) need a sum of at least 75 and no cell below 2 — or construction raises
+naming the violated constraint:
+
+```python
+Ruleset(player_count=3, value_chart=(-20, 0, 20, 20, 10, 8))  # a hump with a negative cell
+Ruleset(player_count=3, value_chart=(0, 2, 4, 6, 8, 10))  # ValueError: breaks the sum floor
+```
+
+The **payment rule** decides what the auction winner pays. Under
+`"first-price"` the winner pays their own bid; under `"second-price"` the
+winner pays the runner-up bid (a lone positive bid pays 0). The highest bidder
+wins under either rule, but the rule flips optimal bidding: shade below your
+value under first-price, bid your value truthfully under second-price.
+
+```python
+Ruleset(player_count=4, value_chart="C", payment_rule="second-price")
+```
+
+`LocalGame`, `run_games`, `SimEngine` and `BatchSimEngine` all take
+`ruleset=`; they also keep `value_chart=` / `payment_rule=` /
+`objectives_enabled=` keywords as a convenience that builds the same
+`Ruleset` for you (pass one style or the other, not both). Bots never see the
+key: `DecisionContext.value_chart` is always the resolved cells.
+
 ### One game: `LocalGame`
 
 ```python
-from pocketrocks.sim import LocalGame
+from pocketrocks.sim import LocalGame, Ruleset
 
 result = LocalGame(
     [MyBot(), OtherBot(), ThirdBot()],
     seed=0,  # anything hashable-as-string; same seed -> same game
-    value_chart="A",
-    objectives_enabled=True,
+    ruleset=Ruleset(player_count=3, value_chart="A", payment_rule="first-price"),
     decision_budget_ms=60_000,
     record_decisions=False,
 ).play()
@@ -123,7 +176,7 @@ summary = run_games(
     seeds=None,  # default: "game-0", "game-1", ... ; or pass your own
     rotate_seats=True,  # rotate providers through seats so seat bias averages out
     workers=1,  # >1 uses a process pool
-    value_chart="A",
+    ruleset=Ruleset(player_count=3, value_chart="A", payment_rule="second-price"),
     record_decisions=False,
     decision_budget_ms=60_000,
 )
@@ -150,6 +203,11 @@ from pocketrocks.sim import BatchSimEngine
 engine = BatchSimEngine.start(
     player_count=3,
     seeds=tuple(f"episode-{index}" for index in range(1024)),
+    # Optional per-row rules, each one entry per seed (defaults: A, first-price, on):
+    value_charts=tuple("ABCDE"[index % 5] for index in range(1024)),  # keys or inline 6-tuples
+    payment_rules=tuple("second-price" if index % 2 else "first-price" for index in range(1024)),
+    objectives_enabled=tuple(True for _ in range(1024)),
+    # ...or `rulesets=(Ruleset(...), ...)` in place of the three sequences.
 )
 while (actions := engine.flip_actions()).any():
     legal = engine.legal_max_bids()
@@ -163,8 +221,8 @@ scores = engine.scores()
 rankings = engine.rankings()
 ```
 
-One batch has a homogeneous player count; value charts and objective flags may
-vary by row. Use `SimEngine` or `LocalGame` when you need the traditional
+One batch has a homogeneous player count; value charts, payment rules and
+objective flags may vary by row (`engine.rulesets` holds one `Ruleset` per row). Use `SimEngine` or `LocalGame` when you need the traditional
 single-game interface, bot callbacks, or canonical trace objects. `SimEngine`
 is a size-one facade over the same batch rules kernel, so scalar and bulk rules
 cannot drift.
@@ -264,6 +322,12 @@ value in the offered suits), and `ValueTraderBot` (chases suits it holds
 information about, conserves cash otherwise). Benchmark your bot against them
 with `run_games([MyBot, GreedyValueBot, ValueTraderBot, AlwaysPassBot], 500)`.
 
+The two value-estimating bots shade under first-price and bid their estimate
+under second-price; tell them the rule at construction when the game is not
+first-price — `GreedyValueBot(payment_rule="second-price")` (a zero-arg
+factory, `lambda: GreedyValueBot(payment_rule="second-price")`, does the same
+for `run_games` with `workers=1`).
+
 ### Determinism
 
 Same `seed`, same bots, same moves, every time: `LocalGame` and `run_games`
@@ -280,7 +344,9 @@ deadline fields for budget management only.
 ### Staying in sync with the live rules
 
 Local results are only meaningful if the local rules match the ones the live
-server enforces. Every `LocalGame`/`run_games` call does a best-effort,
+server enforces. The SDK's `RULES_VERSION` (in `pocketrocks._version`) names
+the rules revision the sim implements; it increments whenever the canonical
+rules change. Every `LocalGame`/`run_games` call does a best-effort,
 silent, at-most-once-per-process check against this repo's default branch and
 logs a warning if a newer SDK — especially one with a game **rules** change —
 is available. It never blocks or raises; if you're offline, or you want to
