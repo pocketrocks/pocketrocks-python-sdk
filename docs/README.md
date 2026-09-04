@@ -16,6 +16,7 @@ One fact, one home:
 | Navigation, policy, invariants, agent rules | this file |
 | Why a cross-cutting decision was made | `docs/adr/*.md` |
 | How a subsystem works | thin `README.md` next to the code |
+| Domain vocabulary (glossary only) | root `CONTEXT.md` |
 | Recurring review pitfalls | root `REVIEW.md` |
 | Status, roadmap, debt, current intent | GitHub issues — never a committed doc |
 | Design specs, implementation plans, handoffs | untracked (scratchpad / gitignored) |
