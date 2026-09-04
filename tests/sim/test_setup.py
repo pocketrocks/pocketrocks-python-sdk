@@ -5,7 +5,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, cast
 
-from pocketrocks.internal.bot_wire_v2 import GameSetupEvent
+from pocketrocks.internal.bot_wire import GameSetupEvent
 from pocketrocks.sim.constants import (
     ACTION_DECK,
     ITEM_DECK_SUITS,

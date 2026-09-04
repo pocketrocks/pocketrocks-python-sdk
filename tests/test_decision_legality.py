@@ -128,7 +128,8 @@ def test_a_valued_pass_survives_the_codec_after_discarding() -> None:
     # Proof the classification matches the codec: a plain pass encodes, a valued
     # one would raise — which is exactly why it is discarded rather than sent.
     from pocketrocks.exceptions import InvalidBotDecision
-    from pocketrocks.internal.bot_wire_v2 import DecisionResponse, encode_frame
+    from pocketrocks.internal.bot_wire import DecisionResponse
+    from pocketrocks.protocol import encode_frame
 
     _bid_context(10).validate(BotDecision(action_kind="pass"))  # legal, no raise
     with pytest.raises(InvalidBotDecision, match="pass responses must not carry a value"):
@@ -156,7 +157,7 @@ def test_classify_corrects_a_negative_bid_to_zero() -> None:
 
 
 def test_classify_corrects_an_unencodable_large_bid() -> None:
-    from pocketrocks.internal.bot_wire_v2 import max_safe_integer
+    from pocketrocks.internal.bot_wire import max_safe_integer
 
     applied, error, outgoing = classify(
         _bid_context(10), BotDecision.submit_bid(max_safe_integer + 1)
@@ -180,7 +181,7 @@ def test_an_unencodable_bid_is_corrected_even_without_a_legal_max() -> None:
     # the codec and be swallowed — the exact bug the corrected tier prevents.
     from dataclasses import replace
 
-    from pocketrocks.internal.bot_wire_v2 import max_safe_integer
+    from pocketrocks.internal.bot_wire import max_safe_integer
 
     context = replace(_bid_context(10), legal_max_amount=None)
     applied, error, outgoing = classify(context, BotDecision.submit_bid(max_safe_integer + 1))
@@ -207,7 +208,8 @@ def test_classify_returns_the_original_decision_when_legal() -> None:
 
 def test_a_corrected_bid_is_encodable() -> None:
     # The whole point: what classify hands back must survive the codec.
-    from pocketrocks.internal.bot_wire_v2 import DecisionResponse, encode_frame
+    from pocketrocks.internal.bot_wire import DecisionResponse
+    from pocketrocks.protocol import encode_frame
 
     _applied, _error, outgoing = classify(_bid_context(10), BotDecision.submit_bid(-1))
     encode_frame(

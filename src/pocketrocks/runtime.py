@@ -14,18 +14,18 @@ from pocketrocks.exceptions import (
     TransportError,
     TransportRejected,
 )
-from pocketrocks.internal.bot_wire_v2 import (
+from pocketrocks.internal.bot_wire import (
     DecisionRequest,
     Frame,
     HeartbeatRequest,
     HeartbeatResponse,
-    decode_frame,
-    encode_frame,
 )
 from pocketrocks.protocol import (
     build_connection_url,
     build_decision_context,
     decision_to_protocol_response,
+    decode_frame,
+    encode_frame,
 )
 from pocketrocks.reconnect import ReconnectOutcome, ReconnectPolicy
 from pocketrocks.transport import WebSocketTransport

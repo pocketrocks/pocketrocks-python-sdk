@@ -3,13 +3,12 @@ from __future__ import annotations
 from dataclasses import fields
 
 from pocketrocks import ActionId, DecisionContext, Suit
-from pocketrocks.internal.bot_wire_v2 import (
+from pocketrocks.internal.bot_wire import (
     DecisionRequest,
     ReconstructedDecisionContext,
-    decode_frame,
     reconstruct_decision_context,
 )
-from pocketrocks.protocol import build_decision_context
+from pocketrocks.protocol import build_decision_context, decode_frame
 from pocketrocks.testing import scenario
 
 

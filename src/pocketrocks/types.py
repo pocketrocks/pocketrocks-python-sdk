@@ -5,8 +5,12 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pocketrocks.exceptions import InvalidBotDecision
-from pocketrocks.internal.bot_wire_v2 import max_safe_integer
+from pocketrocks.internal.bot_wire import max_safe_integer
 
+# How much the auction winner pays: their own bid, or the runner-up's (Vickrey).
+# The winner is the highest bidder under either. Defined here for the live path;
+# the engine's ``Ruleset`` module (#21) is expected to re-export this same Literal.
+PaymentRule = Literal["first-price", "second-price"]
 decisionKind = Literal["submitBid", "selectInfoToReveal"]
 decisionActionKind = Literal["pass", "submitBid", "selectInfoToReveal"]
 decisionFate = Literal["ok", "discarded", "corrected", "forwarded"]
@@ -72,6 +76,12 @@ class DecisionContext:
     current_hand_suit_ids: tuple[int, ...]
     legal_max_amount: int | None
     revealable_count: int
+    # The rule this game's auctions are priced under; ``cash_by_seat`` already
+    # reflects it. Mirrors ``ReconstructedDecisionContext.payment_rule`` (the
+    # wire copies fields by name, so the two must be added together). Defaults to
+    # the rule the game has always had, so a context built without stating one
+    # means what it always meant.
+    payment_rule: PaymentRule = "first-price"
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property

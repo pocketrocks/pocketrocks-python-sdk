@@ -508,7 +508,7 @@ MyBot(api_key="...", bot_id="123", server_url="wss://host").run()
 | `POCKETROCKS_BOT_ID` | `bot_id` | **Yes** | — |
 | `POCKETROCKS_SERVER_URL` | `server_url` | No | `wss://pocketrocks.xyz` |
 | `POCKETROCKS_BOT_CAPACITY` | `capacity` | No | `1` |
-| `POCKETROCKS_PROTOCOL_VERSION` | `protocol_version` | No | `2` |
+| `POCKETROCKS_PROTOCOL_VERSION` | `protocol_version` | No | `3` (must equal the SDK's version; see [compatibility](#supported-rules--compatibility)) |
 | `POCKETROCKS_MAX_IN_FLIGHT_DECISIONS` | `max_in_flight_decisions` | No | `4` |
 | `POCKETROCKS_MAX_QUEUE_SIZE` | `max_queue_size` | No | `32` |
 | `POCKETROCKS_MIN_REMAINING_DEADLINE_MS_TO_START` | `min_remaining_deadline_ms_to_start` | No | `100` |
@@ -524,12 +524,49 @@ The annotated template is [`.env.example`](.env.example).
 
 ---
 
+## Supported rules & compatibility
+
+**Payment rule.** A game is played under one of two payment rules, and your
+bot is told which in `context.payment_rule`:
+
+- `"first-price"` — the winner pays their own bid. Bidding your full valuation
+  wins auctions at zero profit, so shading below it is rewarded.
+- `"second-price"` (Vickrey) — the winner pays the second-highest bid. What you
+  bid only decides *whether* you win, never *how much* you pay, so bidding your
+  true valuation is the dominant strategy; shading only loses auctions you
+  wanted.
+
+The highest bidder wins under either rule (ties break clockwise from the
+tiebreak seat); `cash_by_seat` already reflects whichever rule is in play. A
+bot that ignores `payment_rule` and shades under second-price is leaving money
+on the table.
+
+**Value charts.** `context.value_chart` may be one of the five fixed charts or a
+custom chart generated for that game, and custom charts may contain negative
+cells (holding *n* of a suit can cost points). Read the six numbers; never
+assume a chart shape.
+
+**Protocol version.** The server serves exactly one bot-wire protocol version
+at a time, and this SDK speaks exactly one (`3`). A handshake offering any
+other version is rejected at connect time (HTTP 400, which the runtime treats
+as fatal and stops), and the SDK refuses to start if
+`POCKETROCKS_PROTOCOL_VERSION` / `protocol_version` names anything but its own
+version. If the server has moved on, the fix is to upgrade, not to change the
+setting:
+
+```bash
+pip install --upgrade git+https://github.com/jaiparera/pocketrocks-python-sdk.git
+```
+
+---
+
 ## How the SDK behaves at runtime
 
 You don't have to manage any of this — it's handled for you:
 
 - Connects to `GET /api/bots/connect` with bearer API-key auth, speaking binary
-  bot-wire protocol version `2`.
+  bot-wire protocol version `3` — the only version this SDK speaks (see
+  [Supported rules & compatibility](#supported-rules--compatibility)).
 - Answers heartbeats automatically on the read loop.
 - Processes decisions in parallel via a bounded worker pool; writes are
   serialized so concurrent tasks can't corrupt the socket.
@@ -557,12 +594,14 @@ uv sync --all-extras
 ### Vendored protocol package
 
 The generated Python bot-wire package is vendored under
-[`src/pocketrocks/internal/bot_wire_v2`](src/pocketrocks/internal/bot_wire_v2).
+[`src/pocketrocks/internal/bot_wire`](src/pocketrocks/internal/bot_wire); its
+`README.md` holds the sync procedure.
 
 - Upstream source: `../pocketrocks/packages/shared/python/pocketrocks_bot_wire`
-- Protocol version: `2`
-- Parity is verified by a golden-fixture test in
-  [`tests/test_external_bot_runtime.py`](tests/test_external_bot_runtime.py).
+- Protocol version the SDK speaks: `3`, pinned once in
+  `src/pocketrocks/protocol.py` (`PROTOCOL_VERSION`).
+- Parity is verified byte for byte against the upstream golden fixtures in
+  [`tests/test_protocol_wire_v3.py`](tests/test_protocol_wire_v3.py).
 
 ### Benchmarks
 

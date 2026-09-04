@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from pocketrocks.internal.bot_wire_v2 import (
+from pocketrocks.internal.bot_wire import (
     AuctionResolvedEvent,
     CommonEvent,
     GameSetupEvent,

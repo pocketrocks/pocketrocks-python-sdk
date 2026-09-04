@@ -11,7 +11,7 @@ from pocketrocks import (
     describe_suit,
     objective_payout,
 )
-from pocketrocks.internal.bot_wire_v2.constants import (
+from pocketrocks.internal.bot_wire.constants import (
     bot_wire_action_ids,
     bot_wire_objective_definitions,
 )

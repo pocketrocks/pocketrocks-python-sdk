@@ -1,0 +1,23 @@
+{
+  "_comment": "Golden vectors for the #629 codec primitives. The TypeScript and Python codecs each assert their own encoding against THIS file rather than against each other, so byte-identity is held by a committed third party instead of one side trusting the other. -20 and 20 are the #524 chart cell envelope's extremes (CHART_CELL_CAP); the two largest entries are botWireMaxSafeSignedInteger / bot_wire_max_safe_signed_integer.",
+  "signedVarintHex": {
+    "0": "00",
+    "-1": "01",
+    "1": "02",
+    "-2": "03",
+    "2": "04",
+    "-20": "27",
+    "20": "28",
+    "63": "7e",
+    "-64": "7f",
+    "64": "8001",
+    "-128": "ff01",
+    "128": "8002",
+    "4503599627370495": "feffffffffffff0f",
+    "-4503599627370495": "fdffffffffffff0f"
+  },
+  "presenceHex": {
+    "present": "01",
+    "absent": "00"
+  }
+}

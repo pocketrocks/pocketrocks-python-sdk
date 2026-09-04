@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 from pocketrocks import ActionId, BotDecision, PocketRocksBot, Suit
 from pocketrocks import _reporting as reporting
-from pocketrocks.internal.bot_wire_v2 import DecisionRequest, DecisionResponse, Frame
+from pocketrocks.internal.bot_wire import DecisionRequest, DecisionResponse, Frame
 from pocketrocks.testing import FakeTransport, decode_frames, heartbeat_bytes, scenario
 from pocketrocks.types import DecisionContext, RuntimeEvent, decisionKind
 
@@ -60,23 +58,6 @@ def _fixture_request_bytes(
     )
 
 
-def test_vendored_bot_wire_matches_golden_fixture() -> None:
-    from pocketrocks.internal.bot_wire_v2 import reconstruct_decision_context
-
-    fixture_path = Path(__file__).parent / "fixtures" / "bot_wire_v2.json"
-    fixture = json.loads(fixture_path.read_text(encoding="utf8"))
-    request_bytes = bytes.fromhex(fixture["decisionRequestHex"])
-
-    frame = decode_frames([request_bytes])[0]
-    assert isinstance(frame, DecisionRequest)
-    context = reconstruct_decision_context(frame)
-
-    assert request_bytes.hex() == fixture["decisionRequestHex"]
-    assert frame.kind == "decisionRequest"
-    assert context.cash_by_seat == (16, 20, 20)
-    assert context.legal_max_amount == 26
-
-
 @pytest.mark.asyncio
 async def test_runtime_connects_handles_heartbeat_and_submits_decision() -> None:
     transport = FakeTransport(
@@ -100,7 +81,7 @@ async def test_runtime_connects_handles_heartbeat_and_submits_decision() -> None
 
     sent_frames = decode_frames(transport.sent_messages)
     assert transport.connected_url == (
-        "ws://example.test/api/bots/connect?botId=bot_1234&protocolVersion=2&capacity=1"
+        "ws://example.test/api/bots/connect?botId=bot_1234&protocolVersion=3&capacity=1"
     )
     assert transport.connected_headers == {"Authorization": "ApiKey test-key"}
     assert [frame.kind for frame in sent_frames] == ["heartbeatResponse", "decisionResponse"]

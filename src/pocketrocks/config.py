@@ -7,6 +7,8 @@ from typing import Any
 
 from dotenv import find_dotenv, load_dotenv
 
+from pocketrocks.protocol import PROTOCOL_VERSION
+
 
 def _str_or_none(env: str) -> Callable[[], str | None]:
     return lambda: os.getenv(env) or None
@@ -61,7 +63,10 @@ _SETTINGS: tuple[_Setting, ...] = (
     _Setting("bot_id", _str_or_none("POCKETROCKS_BOT_ID")),
     _Setting("server_url", _str("POCKETROCKS_SERVER_URL", "wss://pocketrocks.xyz")),
     _Setting("capacity", _int("POCKETROCKS_BOT_CAPACITY", 1)),
-    _Setting("protocol_version", _int("POCKETROCKS_PROTOCOL_VERSION", 2)),
+    # Defaults to the one version this SDK speaks; any other value is refused in
+    # BotConfig.__post_init__. The knob survives only so a wrong value fails with
+    # a message naming the fix instead of at the first frame.
+    _Setting("protocol_version", _int("POCKETROCKS_PROTOCOL_VERSION", PROTOCOL_VERSION)),
     _Setting("max_in_flight_decisions", _int("POCKETROCKS_MAX_IN_FLIGHT_DECISIONS", 4)),
     _Setting("max_queue_size", _int("POCKETROCKS_MAX_QUEUE_SIZE", 32)),
     _Setting(
@@ -108,6 +113,19 @@ class BotConfig:
     reconnect_max_delay_seconds: float
     rejected_reconnect_max_delay_seconds: float
     debug: bool
+
+    def __post_init__(self) -> None:
+        # The SDK speaks exactly one bot-wire version (pocketrocks.protocol). A
+        # different one here would be offered at the handshake and then fail on
+        # every frame the codec sees, so it is refused before any connection.
+        if self.protocol_version != PROTOCOL_VERSION:
+            raise ValueError(
+                f"protocol_version {self.protocol_version} is not the bot-wire version this "
+                f"SDK speaks ({PROTOCOL_VERSION}). Remove POCKETROCKS_PROTOCOL_VERSION (or the "
+                "protocol_version argument) to use the default. If the server now requires a "
+                "newer version, upgrade the SDK instead: pip install --upgrade "
+                "git+https://github.com/jaiparera/pocketrocks-python-sdk.git"
+            )
 
     @classmethod
     def from_env(cls, **overrides: Any) -> BotConfig:

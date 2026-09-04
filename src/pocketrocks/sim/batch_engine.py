@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from pocketrocks.internal.bot_wire_v2.constants import bot_wire_objective_definitions
+from pocketrocks.internal.bot_wire.constants import bot_wire_objective_definitions
 
 from .constants import (
     ACTION_DECK,

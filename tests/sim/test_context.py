@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pocketrocks.internal.bot_wire_v2 import decode_frame, encode_frame
-from pocketrocks.protocol import build_decision_context
+from pocketrocks.protocol import build_decision_context, decode_frame, encode_frame
 from pocketrocks.sim.context import build_sim_context, build_sim_request_and_context
 from pocketrocks.sim.engine import SimEngine
 

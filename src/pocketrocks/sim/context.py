@@ -21,7 +21,7 @@ import time
 import uuid
 from collections.abc import Sequence
 
-from pocketrocks.internal.bot_wire_v2 import DecisionRequest
+from pocketrocks.internal.bot_wire import DecisionRequest
 from pocketrocks.types import DecisionContext, decisionKind
 
 from .constants import ACTION_WIRE_IDS, LOAN_PRINCIPAL, STARTING_CASH
