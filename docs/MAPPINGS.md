@@ -35,12 +35,12 @@ is `None` when no turn is open).
 
 | Action id | `ActionId` | What winning it does |
 | --- | --- | --- |
-| 1 | `AUCTION1` | Auction for 1 resource card. The winner pays their bid and gains the offered resource. |
-| 2 | `AUCTION2` | Auction for 2 resource cards. The winner pays their bid and gains both offered resources. |
-| 3 | `LOAN10` | The winner pays their bid now, immediately gains $10 cash, and repays $10 during scoring. |
-| 4 | `LOAN20` | The winner pays their bid now, immediately gains $20 cash, and repays $20 during scoring. |
-| 5 | `INVEST5` | The winner locks their winning bid and gets it back plus $5 during scoring. |
-| 6 | `INVEST10` | The winner locks their winning bid and gets it back plus $10 during scoring. |
+| 1 | `AUCTION1` | Auction for 1 resource card. The winner pays the auction price and gains the offered resource. |
+| 2 | `AUCTION2` | Auction for 2 resource cards. The winner pays the auction price and gains both offered resources. |
+| 3 | `LOAN10` | The winner pays the auction price now, immediately gains $10 cash, and repays $10 during scoring. |
+| 4 | `LOAN20` | The winner pays the auction price now, immediately gains $20 cash, and repays $20 during scoring. |
+| 5 | `INVEST5` | The winner locks the auction price and gets it back plus $5 during scoring. |
+| 6 | `INVEST10` | The winner locks the auction price and gets it back plus $10 during scoring. |
 
 Loans raise your legal bid ceiling for that turn — `legal_max_amount` already
 accounts for this, so you don't have to.

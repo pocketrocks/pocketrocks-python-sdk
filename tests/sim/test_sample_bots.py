@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from pocketrocks import ActionId, DecisionContext, Suit
-from pocketrocks.sim import LocalGame, run_games
+from pocketrocks.sim import LocalGame, Ruleset, run_games
 from pocketrocks.sim.sample_bots import AlwaysPassBot, GreedyValueBot, RandomBot, ValueTraderBot
 from pocketrocks.testing import scenario
 
@@ -47,6 +47,51 @@ async def test_value_trader_prices_known_suits_from_active_value_chart(
     )
 
     assert (await ValueTraderBot().choose_decision(context)).value == expected_bid
+
+
+async def test_value_trader_bids_truthfully_under_second_price() -> None:
+    # Same spot as the shading test below: estimate 20, cash 30. First-price caps
+    # the bid at a third of cash; second-price bids the estimate.
+    context = (
+        scenario(players=3, starting_cash=30, value_chart=(20, 16, 12, 8, 4, 0))
+        .turn(ActionId.AUCTION1, resources=(Suit.BRICK, 0))
+        .deciding(seat=0, hand=[Suit.ORE, Suit.SHEEP])
+        .to_context()
+    )
+
+    assert (await ValueTraderBot().choose_decision(context)).value == 10
+    assert (await ValueTraderBot(payment_rule="second-price").choose_decision(context)).value == 20
+
+
+async def test_greedy_value_bot_bids_truthfully_under_second_price() -> None:
+    # Cash 7 and an estimate of 7 (one Brick in hand on a 0,7,... chart): the
+    # first-price shade rounds the bid down to 6; second-price bids the full 7.
+    context = (
+        scenario(players=3, starting_cash=7, value_chart=(0, 7, 13, 20, 10, 0))
+        .turn(ActionId.AUCTION1, resources=(Suit.BRICK, 0))
+        .deciding(seat=0, hand=[Suit.BRICK])
+        .to_context()
+    )
+
+    assert (await GreedyValueBot().choose_decision(context)).value == 6
+    assert (await GreedyValueBot(payment_rule="second-price").choose_decision(context)).value == 7
+
+
+def test_sample_bots_complete_a_second_price_custom_chart_game() -> None:
+    ruleset = Ruleset(
+        player_count=4, value_chart=(-4, 8, 16, 18, 8, -4), payment_rule="second-price"
+    )
+    result = LocalGame(
+        [
+            RandomBot(seed=1),
+            AlwaysPassBot(),
+            GreedyValueBot(payment_rule="second-price"),
+            ValueTraderBot(payment_rule="second-price"),
+        ],
+        seed=5,
+        ruleset=ruleset,
+    ).play()
+    assert len(result.scores) == 4
 
 
 async def test_value_trader_bids_on_unknown_suits_when_chart_values_zero_count() -> None:

@@ -23,6 +23,7 @@ from pocketrocks._update_check import kickoff_update_check
 from pocketrocks.bot import PocketRocksBot
 
 from .game import GameResult, LocalGame, bot_label
+from .ruleset import PaymentRule, Ruleset, coerce_ruleset
 
 BotProvider = PocketRocksBot | type[PocketRocksBot] | Callable[[], PocketRocksBot]
 
@@ -81,7 +82,7 @@ def _play_one_game(
     providers: Sequence[BotProvider],
     seed: str,
     rotation: int,
-    value_chart: str,
+    ruleset: Ruleset,
     record_decisions: bool,
     decision_budget_ms: int,
 ) -> GameResult:
@@ -91,7 +92,7 @@ def _play_one_game(
     return LocalGame(
         bots_by_seat,
         seed=seed,
-        value_chart=value_chart,
+        ruleset=ruleset,
         record_decisions=record_decisions,
         decision_budget_ms=decision_budget_ms,
     ).play()
@@ -104,14 +105,24 @@ def run_games(
     seeds: Sequence[str | int] | None = None,
     rotate_seats: bool = True,
     workers: int = 1,
-    value_chart: str = "A",
+    value_chart: str | Sequence[int] = "A",
+    payment_rule: PaymentRule = "first-price",
+    objectives_enabled: bool = True,
     record_decisions: bool = False,
     decision_budget_ms: int = 60_000,
+    ruleset: Ruleset | None = None,
 ) -> BenchmarkSummary:
     kickoff_update_check()
     n = len(providers)
     if not 3 <= n <= 5:
         raise ValueError("PocketRocks supports 3-5 players")
+    rules = coerce_ruleset(
+        player_count=n,
+        ruleset=ruleset,
+        value_chart=value_chart,
+        payment_rule=payment_rule,
+        objectives_enabled=objectives_enabled,
+    )
     if n_games < 0:
         raise ValueError("n_games must be non-negative")
     if workers > 1:
@@ -171,7 +182,7 @@ def run_games(
                 providers,
                 seed_list[i],
                 rotations[i],
-                value_chart,
+                rules,
                 record_decisions,
                 decision_budget_ms,
             )
@@ -185,7 +196,7 @@ def run_games(
                     list(providers),
                     seed_list[game_index],
                     rotations[game_index],
-                    value_chart,
+                    rules,
                     record_decisions,
                     decision_budget_ms,
                 )

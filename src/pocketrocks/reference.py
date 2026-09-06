@@ -66,26 +66,31 @@ SUIT_LABELS: dict[int, str] = {suit.value: suit.label for suit in Suit}
 #: Action id (1-6) -> plain-English description of what winning it does.
 ACTION_DESCRIPTIONS: dict[int, str] = {
     ActionId.AUCTION1: (
-        "Auction for 1 resource card. The winner pays their bid and gains the offered resource."
+        "Auction for 1 resource card. The winner pays the auction price and gains the "
+        "offered resource."
     ),
     ActionId.AUCTION2: (
-        "Auction for 2 resource cards. The winner pays their bid and gains both offered resources."
+        "Auction for 2 resource cards. The winner pays the auction price and gains both "
+        "offered resources."
     ),
     ActionId.LOAN10: (
-        "Loan 10. The winner pays their bid now, immediately gains $10 cash, and "
+        "Loan 10. The winner pays the auction price now, immediately gains $10 cash, and "
         "repays $10 during scoring."
     ),
     ActionId.LOAN20: (
-        "Loan 20. The winner pays their bid now, immediately gains $20 cash, and "
+        "Loan 20. The winner pays the auction price now, immediately gains $20 cash, and "
         "repays $20 during scoring."
     ),
     ActionId.INVEST5: (
-        "Invest 5. The winner locks their winning bid and gets it back plus $5 during scoring."
+        "Invest 5. The winner locks the auction price and gets it back plus $5 during scoring."
     ),
     ActionId.INVEST10: (
-        "Invest 10. The winner locks their winning bid and gets it back plus $10 during scoring."
+        "Invest 10. The winner locks the auction price and gets it back plus $10 during scoring."
     ),
 }
+# "The auction price" rather than "their bid": under the first-price payment
+# rule the two are the same, under second-price the winner pays the runner-up
+# bid. The highest bidder wins under either rule (see ``pocketrocks.sim.Ruleset``).
 
 
 @dataclass(frozen=True, slots=True)

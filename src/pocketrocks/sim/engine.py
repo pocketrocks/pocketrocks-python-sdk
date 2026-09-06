@@ -23,6 +23,7 @@ from .constants import (
     OBJECTIVE_PAYOUTS,
     STARTING_CASH,
 )
+from .ruleset import PaymentRule, Ruleset, coerce_ruleset
 from .state import PlayerSim, RevealRecord, ScoreRow, TurnRecord
 
 _ACTION_BY_WIRE_ID = {wire_id: action for action, wire_id in ACTION_WIRE_IDS.items()}
@@ -46,9 +47,11 @@ class SimEngine:
         player_count: int,
         seed: str,
         *,
-        value_chart: str = "A",
+        value_chart: str | Sequence[int] = "A",
+        payment_rule: PaymentRule = "first-price",
         objectives_enabled: bool = True,
         player_names: Sequence[str] | None = None,
+        ruleset: Ruleset | None = None,
     ) -> None:
         names = (
             list(player_names)
@@ -57,14 +60,15 @@ class SimEngine:
         )
         if len(names) != player_count:
             raise ValueError("player_names length must match player_count")
-        self._batch = BatchSimEngine.start(
+        self.ruleset = coerce_ruleset(
             player_count=player_count,
-            seeds=(seed,),
-            value_charts=(value_chart,),
-            objectives_enabled=(objectives_enabled,),
+            ruleset=ruleset,
+            value_chart=value_chart,
+            payment_rule=payment_rule,
+            objectives_enabled=objectives_enabled,
         )
+        self._batch = BatchSimEngine.start(seeds=(seed,), rulesets=(self.ruleset,))
         self.seed = seed
-        self.value_chart_key = value_chart
         self.value_chart = tuple(int(value) for value in self._batch.value_charts[0])
         self.debug_item_deck_order = tuple(int(card) for card in self._batch.item_decks[0])
         self.debug_action_deck_order = tuple(

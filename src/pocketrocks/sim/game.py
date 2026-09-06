@@ -19,6 +19,7 @@ from pocketrocks.types import (
 
 from .context import build_sim_request_and_context
 from .engine import SimEngine
+from .ruleset import PaymentRule, Ruleset
 from .state import ScoreRow, TurnRecord
 
 logger = logging.getLogger("pocketrocks.sim")
@@ -62,18 +63,22 @@ class LocalGame:
         bots: Sequence[PocketRocksBot],
         *,
         seed: str | int,
-        value_chart: str = "A",
+        value_chart: str | Sequence[int] = "A",
+        payment_rule: PaymentRule = "first-price",
         objectives_enabled: bool = True,
         decision_budget_ms: int = 60_000,
         record_decisions: bool = False,
+        ruleset: Ruleset | None = None,
     ) -> None:
         self._bots = list(bots)
         self._engine = SimEngine(
             len(self._bots),
             str(seed),
             value_chart=value_chart,
+            payment_rule=payment_rule,
             objectives_enabled=objectives_enabled,
             player_names=[bot_label(bot) for bot in self._bots],
+            ruleset=ruleset,
         )
         self._budget_ms = decision_budget_ms
         self._record = record_decisions
@@ -88,6 +93,11 @@ class LocalGame:
 
     def play(self) -> GameResult:
         return asyncio.run(self.play_async())
+
+    @property
+    def ruleset(self) -> Ruleset:
+        """The rules this game is played under."""
+        return self._engine.ruleset
 
     async def play_async(self) -> GameResult:
         kickoff_update_check()

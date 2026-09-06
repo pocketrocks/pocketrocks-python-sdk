@@ -29,10 +29,13 @@ from pocketrocks import (
 )
 ```
 
-These names are the entire public API — see the [Reference](#reference-decoder-ring)
-section below, and [`MAPPINGS.md`](MAPPINGS.md) for the full ID tables.
-Everything under `pocketrocks.internal` is an implementation detail and may
-change without notice — don't import from it.
+These names are the entire public API for *playing* — see the
+[Reference](#reference-decoder-ring) section below, and
+[`MAPPINGS.md`](MAPPINGS.md) for the full ID tables. Local simulation lives in
+`pocketrocks.sim` (see the [README](../README.md#local-training--simulation));
+its rules seam, [`Ruleset`](#ruleset-pocketrockssim), is documented at the end of
+this file. Everything under `pocketrocks.internal` is an implementation detail
+and may change without notice — don't import from it.
 
 ---
 
@@ -253,6 +256,60 @@ suit ids in the context. `Suit(3).label == "Ore"`. Suit-indexed arrays are
 
 The `describe_*` helpers return an `"Unknown ... id N"` string for unrecognized
 ids rather than raising.
+
+---
+
+## `Ruleset` (`pocketrocks.sim`)
+
+The game-defining settings a simulated game is played under — the same four
+facts the live server's ruleset carries, in snake_case. Frozen dataclass;
+validated on construction. Accepted by `LocalGame`, `run_games`, `SimEngine`
+and `BatchSimEngine.start` as `ruleset=` (or one per row as `rulesets=`).
+
+```python
+from pocketrocks.sim import Ruleset, PaymentRule, resolve_chart, compute_paid
+```
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `player_count` | `int` | — | `3`-`5`. |
+| `value_chart` | `str \| tuple[int, ...]` | `"A"` | A fixed chart key `"A"`-`"E"` (case-insensitive; stored upper-case) or an inline **custom value chart** of exactly 6 integers, validated against the constraint envelope below. |
+| `payment_rule` | `PaymentRule` | `"first-price"` | What the auction winner pays: `"first-price"` their own bid, `"second-price"` the runner-up bid (a lone positive bid pays 0). The highest bidder wins under either rule. |
+| `objectives_enabled` | `bool` | `True` | Whether the four objective cards are in play. |
+
+Derived:
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `chart` | `tuple[int, ...]` | The resolved 6 cells. This is what `DecisionContext.value_chart` carries — bots never see the key. |
+| `chart_label` | `str` | `"A"`-`"E"` for a fixed chart, `custom(c0,c1,...)` for an inline one; for naming runs. |
+
+### Constraint envelope
+
+Inline charts must satisfy the envelope the server generates custom charts
+under, or `Ruleset(...)` / `resolve_chart(...)` raise `ValueError` naming the
+violated constraint:
+
+| Constant | Value | Rule |
+| --- | --- | --- |
+| `CHART_CELL_CAP` | `20` | Every cell within `[-20, 20]`. |
+| `MAX_TURNS` | `1` | At most one direction reversal across the six cells. |
+| `SUM_FLOOR` | `38` | Monotone and hump charts total at least 38 (fixed chart `E` sums to exactly 38). |
+| `VALLEY_SUM_FLOOR` | `75` | A valley (fall then rise) totals at least 75... |
+| `VALLEY_MIN_CELL` | `2` | ...and has no cell below 2. |
+
+The constants are importable from `pocketrocks.sim.ruleset`. The shared
+accept/reject table both the server and this SDK assert against is
+`tests/fixtures/chart_envelope.json`.
+
+### Functions
+
+| Name | Description |
+| --- | --- |
+| `resolve_chart(selection) -> tuple[int, ...]` | Key or inline cells → the 6 cells. The one place chart selections are validated. |
+| `compute_paid(rule, bids) -> int` | The auction price for a set of effective bids under a payment rule. Winner selection is not its job. |
+
+`PaymentRule` is the alias `Literal["first-price", "second-price"]`.
 
 ---
 

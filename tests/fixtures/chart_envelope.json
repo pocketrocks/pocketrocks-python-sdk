@@ -1,0 +1,46 @@
+{
+  "_comment": "Constraint-envelope accept/reject table for custom value charts. Same shape as the shared fixture jaiparera/pocketrocks#683 exports from packages/shared/; swap this file for that one once it lands. Reasons are the constraint names resolve_chart() puts in its error message.",
+  "constants": {
+    "cell_cap": 20,
+    "sum_floor": 38,
+    "valley_sum_floor": 75,
+    "valley_min_cell": 2,
+    "max_turns": 1
+  },
+  "accept": [
+    [0, 4, 8, 12, 16, 20],
+    [20, 16, 12, 8, 4, 0],
+    [0, 2, 5, 9, 14, 20],
+    [20, 18, 15, 11, 6, 0],
+    [0, 4, 10, 18, 6, 0],
+    [0, 10, 20, 13, 7, 0],
+    [0, 7, 13, 20, 10, 0],
+    [20, 16, 10, 2, 14, 20],
+    [-4, 4, 10, 14, 17, 20],
+    [-4, 8, 18, 20, 12, 2],
+    [-4, 8, 16, 18, 8, -4],
+    [-20, 0, 20, 20, 10, 8],
+    [7, 7, 7, 7, 7, 7],
+    [0, 8, 16, 20, 16, 8],
+    [20, 20, 20, 20, 20, 20],
+    [-20, -20, 20, 20, 20, 20]
+  ],
+  "reject": [
+    {"values": [0, 4, 10, 17, 6, 0], "reason": "sum floor"},
+    {"values": [0, 2, 4, 6, 8, 10], "reason": "sum floor"},
+    {"values": [0, 5, 20, 9, 2, 0], "reason": "sum floor"},
+    {"values": [-12, -8, -4, 0, 4, 8], "reason": "sum floor"},
+    {"values": [2, 2, 3, 3, 4, 4], "reason": "sum floor"},
+    {"values": [0, 20, 0, 20, 0, 20], "reason": "turning point"},
+    {"values": [20, -10, 5, 20, 5, -10], "reason": "turning point"},
+    {"values": [6, 16, -4, 12, 18, 8], "reason": "turning point"},
+    {"values": [0, 4, 8, 12, 16, 21], "reason": "cell cap"},
+    {"values": [-21, 4, 8, 12, 16, 20], "reason": "cell cap"},
+    {"values": [0, 4, 8, 12, 16], "reason": "6 cells"},
+    {"values": [0, 4, 8, 12, 16, 20, 24], "reason": "6 cells"},
+    {"values": [0, 4, 8, 12, 16, 20.5], "reason": "integer"},
+    {"values": [20, 10, 0, 10, 15, 20], "reason": "valley min cell"},
+    {"values": [20, 5, 3, 4, 6, 8], "reason": "valley sum floor"},
+    {"values": [14, 4, -6, 4, 14, 20], "reason": "valley min cell"}
+  ]
+}
