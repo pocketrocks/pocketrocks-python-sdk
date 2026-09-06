@@ -323,10 +323,11 @@ information about, conserves cash otherwise). Benchmark your bot against them
 with `run_games([MyBot, GreedyValueBot, ValueTraderBot, AlwaysPassBot], 500)`.
 
 The two value-estimating bots shade under first-price and bid their estimate
-under second-price; tell them the rule at construction when the game is not
-first-price — `GreedyValueBot(payment_rule="second-price")` (a zero-arg
-factory, `lambda: GreedyValueBot(payment_rule="second-price")`, does the same
-for `run_games` with `workers=1`).
+under second-price. They read the rule from `context.payment_rule`, which the
+sim and the live wire both fill in, so they need no configuration; the
+`payment_rule=` constructor argument (`GreedyValueBot(payment_rule="second-price")`)
+is an override for experiments that want a bot to price as if the rule were
+different from the game's.
 
 ### Determinism
 

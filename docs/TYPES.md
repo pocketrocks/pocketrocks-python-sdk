@@ -310,7 +310,9 @@ accept/reject table both the server and this SDK assert against is
 | `resolve_chart(selection) -> tuple[int, ...]` | Key or inline cells → the 6 cells. The one place chart selections are validated. |
 | `compute_paid(rule, bids) -> int` | The auction price for a set of effective bids under a payment rule. Winner selection is not its job. |
 
-`PaymentRule` is the alias `Literal["first-price", "second-price"]`.
+`PaymentRule` is the same `Literal["first-price", "second-price"]` alias
+`DecisionContext.payment_rule` carries (defined in `pocketrocks.types`, re-exported
+from `pocketrocks.sim`); see [Type aliases](#type-aliases).
 
 ---
 

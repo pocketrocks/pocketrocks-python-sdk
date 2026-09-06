@@ -12,6 +12,7 @@ from pocketrocks.sim.constants import VALUE_CHARTS
 from pocketrocks.sim.ruleset import (
     CHART_CELL_CAP,
     MAX_TURNS,
+    PAYMENT_RULES,
     SUM_FLOOR,
     VALLEY_MIN_CELL,
     VALLEY_SUM_FLOOR,
@@ -136,6 +137,16 @@ def test_compute_paid_batch_agrees_with_scalar() -> None:
     for row in range(64):
         rule: PaymentRule = "second-price" if second_price[row] else "first-price"
         assert int(paid[row]) == compute_paid(rule, bids[row].tolist())
+
+
+def test_payment_rule_is_one_literal_shared_with_the_public_types() -> None:
+    # The live DecisionContext and the sim Ruleset must name the same alias, or
+    # a bot typed against one would not type-check against the other.
+    import pocketrocks.sim
+    import pocketrocks.types
+
+    assert pocketrocks.sim.PaymentRule is pocketrocks.types.PaymentRule
+    assert PAYMENT_RULES == ("first-price", "second-price")
 
 
 # --- Ruleset ---------------------------------------------------------------------

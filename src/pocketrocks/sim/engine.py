@@ -110,6 +110,7 @@ class SimEngine:
                 value_chart=self.value_chart,  # type: ignore[arg-type]
                 initial_tiebreak_seat=self.tiebreak_seat,
                 objective_ids=tuple(objective_id for objective_id, _ in self.active_objectives),
+                payment_rule=self.ruleset.payment_rule,
             )
         ]
 

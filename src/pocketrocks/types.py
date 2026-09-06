@@ -8,8 +8,8 @@ from pocketrocks.exceptions import InvalidBotDecision
 from pocketrocks.internal.bot_wire import max_safe_integer
 
 # How much the auction winner pays: their own bid, or the runner-up's (Vickrey).
-# The winner is the highest bidder under either. Defined here for the live path;
-# the engine's ``Ruleset`` module (#21) is expected to re-export this same Literal.
+# The winner is the highest bidder under either. Defined once, here, on the public
+# module every bot already imports; ``pocketrocks.sim.ruleset`` re-exports it.
 PaymentRule = Literal["first-price", "second-price"]
 decisionKind = Literal["submitBid", "selectInfoToReveal"]
 decisionActionKind = Literal["pass", "submitBid", "selectInfoToReveal"]

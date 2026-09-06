@@ -106,6 +106,10 @@ def build_sim_request_and_context(
         player_count=len(engine.players),
         starting_cash=STARTING_CASH[len(engine.players)],
         value_chart=engine.value_chart,
+        # The rule this engine's auctions are priced under (row 0 of the batch
+        # kernel's ``payment_rules``); wire reconstruction reads the same value
+        # from the ``gameSetup`` event, so the two paths agree under either rule.
+        payment_rule=engine.ruleset.payment_rule,
         objective_ids=tuple(objective_id for objective_id, _seat in engine.active_objectives),
         current_action_id=ACTION_WIRE_IDS[action] if action is not None else None,
         current_resource_ids=resources,
