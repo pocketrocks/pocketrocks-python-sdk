@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pocketrocks.internal.bot_wire_v2 import AuctionResolvedEvent, TurnOpenedEvent
+from pocketrocks.internal.bot_wire import AuctionResolvedEvent, TurnOpenedEvent
 from pocketrocks.sim.engine import SimEngine
 from pocketrocks.sim.ruleset import PaymentRule
 

@@ -1,0 +1,4 @@
+{
+  "_comment": "Golden vector for protocol v3 (#630): a second-price room on a custom chart with negative cells, so the fields v2 cannot carry are all exercised. Both codecs assert against THIS file, so byte identity is held by a committed third party (same design as botWireV2.json, which is deliberately untouched by the cutover: v2 bytes must not move).",
+  "decisionRequestHex": "030300112233445566778899aabbccddeeff80b883a1f7320122050103140227070010202802040102030400000201010203030402010405020303040103010103"
+}

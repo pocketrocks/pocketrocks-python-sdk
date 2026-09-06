@@ -49,7 +49,8 @@ Then open the source files you plan to modify.
 | Public exports | `src/pocketrocks/__init__.py` |
 | Bot base class | `src/pocketrocks/bot.py` |
 | Live runtime / game loop | `src/pocketrocks/runtime.py` |
-| Wire protocol framing | `src/pocketrocks/protocol.py` |
+| Wire protocol framing, `PROTOCOL_VERSION` | `src/pocketrocks/protocol.py` |
+| Vendored bot-wire codec (generated upstream) | `src/pocketrocks/internal/bot_wire/` |
 | Transport | `src/pocketrocks/transport.py` |
 | Reconnect policy | `src/pocketrocks/reconnect.py` |
 | Configuration and env vars | `src/pocketrocks/config.py` |
@@ -68,8 +69,12 @@ Then open the source files you plan to modify.
   rules mismatch makes local simulation results diverge from the live server.
 - The update check is advisory only: it never blocks, never raises, runs at most
   once per process, and is fully disabled by `POCKETROCKS_SKIP_VERSION_CHECK`.
-- The bot-wire protocol version must match the server's; a mismatch is rejected
-  at connect time.
+- The SDK speaks exactly one bot-wire protocol version, `protocol.PROTOCOL_VERSION`,
+  derived from the vendored codec's schema constant. `config.protocol_version`
+  must equal it (construction fails otherwise), the handshake offers it, and
+  the decoder rejects a frame in any other version. The server serves exactly
+  one version too, so a mismatch is rejected at the handshake (HTTP 400) and
+  never reaches the codec; the fix is `pip install --upgrade`, never the env var.
 - `develop` is the distribution branch. Its tip is what `pip install
   git+https://...` gives a user.
 

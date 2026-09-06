@@ -22,14 +22,18 @@ from __future__ import annotations
 import numbers
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, get_args
+from typing import get_args
 
 import numpy as np
 from numpy.typing import NDArray
 
+from pocketrocks.types import PaymentRule as PaymentRule  # explicit re-export for mypy
+
 from .constants import VALUE_CHARTS
 
-PaymentRule = Literal["first-price", "second-price"]
+# ``PaymentRule`` is defined once, on the public ``pocketrocks.types`` module (the
+# live ``DecisionContext`` carries it), and re-exported here so ``pocketrocks.sim``
+# and ``pocketrocks.types`` name the same Literal.
 PAYMENT_RULES: tuple[PaymentRule, ...] = get_args(PaymentRule)
 
 #: Number of cells in a value chart (index = cards of one suit held, 0-5).

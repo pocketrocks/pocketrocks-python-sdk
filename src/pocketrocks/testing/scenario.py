@@ -4,17 +4,16 @@ from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from typing import Any
 
-from pocketrocks.internal.bot_wire_v2 import (
+from pocketrocks.internal.bot_wire import (
     AuctionResolvedEvent,
     CommonEvent,
     DecisionRequest,
     GameSetupEvent,
     InfoRevealedEvent,
     TurnOpenedEvent,
-    encode_frame,
 )
-from pocketrocks.protocol import build_decision_context
-from pocketrocks.types import DecisionContext, decisionKind
+from pocketrocks.protocol import build_decision_context, encode_frame
+from pocketrocks.types import DecisionContext, PaymentRule, decisionKind
 
 # A neutral game setup. Callers override what their test cares about; the rest is
 # just enough to make a valid, reconstructable request.
@@ -31,6 +30,7 @@ def scenario(
     value_chart: tuple[int, int, int, int, int, int] = _DEFAULT_VALUE_CHART,
     initial_tiebreak_seat: int = 0,
     objective_ids: tuple[int, ...] = _DEFAULT_OBJECTIVE_IDS,
+    payment_rule: PaymentRule = "first-price",
 ) -> Scenario:
     """Start narrating a game situation for a test.
 
@@ -39,6 +39,10 @@ def scenario(
     move, then call ``.to_context()`` (or ``.to_bytes()``). Every field a real
     ``DecisionContext`` exposes is *derived* from this narration through the same
     production path the live wire uses — nothing is asserted directly.
+
+    ``value_chart`` may be a custom chart with negative cells; ``payment_rule``
+    prices every ``.auction()`` the way the server would under that rule
+    (``"second-price"``: the winner pays the runner-up bid).
     """
     setup = GameSetupEvent(
         kind="gameSetup",
@@ -47,6 +51,7 @@ def scenario(
         value_chart=value_chart,
         initial_tiebreak_seat=initial_tiebreak_seat,
         objective_ids=objective_ids,
+        payment_rule=payment_rule,
     )
     return Scenario(setup)
 

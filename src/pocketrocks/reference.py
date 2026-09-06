@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import cast
 
-from pocketrocks.internal.bot_wire_v2.constants import (
+from pocketrocks.internal.bot_wire.constants import (
     bot_wire_action_ids,
     bot_wire_objective_definitions,
 )

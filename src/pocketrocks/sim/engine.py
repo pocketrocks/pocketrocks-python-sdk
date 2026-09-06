@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from pocketrocks.internal.bot_wire_v2 import (
+from pocketrocks.internal.bot_wire import (
     AuctionResolvedEvent,
     CommonEvent,
     GameSetupEvent,
@@ -110,6 +110,7 @@ class SimEngine:
                 value_chart=self.value_chart,  # type: ignore[arg-type]
                 initial_tiebreak_seat=self.tiebreak_seat,
                 objective_ids=tuple(objective_id for objective_id, _ in self.active_objectives),
+                payment_rule=self.ruleset.payment_rule,
             )
         ]
 

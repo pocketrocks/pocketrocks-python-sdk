@@ -101,4 +101,19 @@ gets just the value, and `describe_objective(id)` just the text.
 indexed by **count** (`0..5`): `value_chart[n]` is the points you score for
 holding `n` cards of a single suit. Example: `(0, 4, 8, 12, 16, 20)` means a
 suit you hold 3 of is worth 12. The chart is the same for every suit in a game,
-but which chart is in play varies per game.
+but which chart is in play varies per game: it may be one of the five fixed
+charts or a custom chart generated for that game, and a custom chart's cells
+**may be negative** (the wire carries them as signed integers). Bots receive the
+six numbers only, never a chart name.
+
+---
+
+## Payment rule
+
+`DecisionContext.payment_rule` is a string, decoded from the wire id below. It
+names how the auction winner pays; the winner is the highest bidder either way.
+
+| Wire id | `payment_rule` | Winner pays |
+| --- | --- | --- |
+| 1 | `"first-price"` | Their own bid. Shading below your valuation is rewarded. |
+| 2 | `"second-price"` | The second-highest bid (a lone positive bid pays 0; a tie for first pays the tied amount). Bidding your true valuation is dominant. |

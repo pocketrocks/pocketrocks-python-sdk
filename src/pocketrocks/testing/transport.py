@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-from pocketrocks.internal.bot_wire_v2 import (
-    Frame,
-    HeartbeatRequest,
-    decode_frame,
-    encode_frame,
-)
+from pocketrocks.internal.bot_wire import Frame, HeartbeatRequest
+from pocketrocks.protocol import decode_frame, encode_frame
 
 _DEFAULT_HEARTBEAT_DEADLINE_MS = 5_000
 

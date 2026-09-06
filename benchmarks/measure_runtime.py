@@ -6,15 +6,13 @@ import time
 from dataclasses import dataclass
 
 from pocketrocks import BotDecision, DecisionContext, PocketRocksBot
-from pocketrocks.internal.bot_wire_v2 import (
+from pocketrocks.internal.bot_wire import (
     AuctionResolvedEvent,
     DecisionRequest,
     GameSetupEvent,
     TurnOpenedEvent,
-    decode_frame,
-    encode_frame,
 )
-from pocketrocks.protocol import build_decision_context
+from pocketrocks.protocol import build_decision_context, decode_frame, encode_frame
 
 
 @dataclass(slots=True, frozen=True)

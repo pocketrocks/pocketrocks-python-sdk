@@ -4,9 +4,10 @@
 The two value-estimating bots are rule-conditional: under first-price they
 shade (cap the bid below their estimate to conserve cash); under second-price
 they bid their estimate, because paying the runner-up price makes truthful
-bidding dominant. Tell them the rule at construction
-(``ValueTraderBot(payment_rule="second-price")``); the context does not carry
-it yet.
+bidding dominant. They read the rule from ``context.payment_rule``, which both
+the sim and the live wire populate, so they need no configuration. The
+``payment_rule=`` constructor argument is an override for experiments that
+want a bot to behave as if the rule were different from the game's.
 """
 
 from __future__ import annotations
@@ -17,6 +18,11 @@ from pocketrocks.bot import PocketRocksBot
 from pocketrocks.types import BotDecision, DecisionContext
 
 from .ruleset import PaymentRule
+
+
+def _rule_in_play(override: PaymentRule | None, context: DecisionContext) -> PaymentRule:
+    """The rule a value bot prices under: the game's, unless overridden at construction."""
+    return context.payment_rule if override is None else override
 
 
 class AlwaysPassBot(PocketRocksBot):
@@ -46,7 +52,7 @@ class RandomBot(PocketRocksBot):
 class GreedyValueBot(PocketRocksBot):
     """Bids proportionally to the value its own hand implies the offered suits hold."""
 
-    def __init__(self, payment_rule: PaymentRule = "first-price") -> None:
+    def __init__(self, payment_rule: PaymentRule | None = None) -> None:
         super().__init__()
         self.payment_rule = payment_rule
 
@@ -61,7 +67,7 @@ class GreedyValueBot(PocketRocksBot):
                 revealed = context.revealed_info_counts_by_suit[suit_id - 1]
                 estimate += context.value_chart[min(own_signal + revealed, 5)]
         bid = min(context.legal_max_amount or 0, estimate)
-        if self.payment_rule == "first-price":
+        if _rule_in_play(self.payment_rule, context) == "first-price":
             bid = min(bid, max(0, cash // 2 + estimate // 2))  # shade to conserve cash
         return BotDecision.submit_bid(bid)
 
@@ -69,7 +75,7 @@ class GreedyValueBot(PocketRocksBot):
 class ValueTraderBot(PocketRocksBot):
     """Prices offered resources from the active chart and known information."""
 
-    def __init__(self, payment_rule: PaymentRule = "first-price") -> None:
+    def __init__(self, payment_rule: PaymentRule | None = None) -> None:
         super().__init__()
         self.payment_rule = payment_rule
 
@@ -95,7 +101,7 @@ class ValueTraderBot(PocketRocksBot):
             resource_count += 1
 
         bid = min(context.legal_max_amount or 0, estimated_value)
-        if self.payment_rule == "first-price":
+        if _rule_in_play(self.payment_rule, context) == "first-price":
             cash = context.cash_by_seat[context.bot_seat]
             bid = min(bid, resource_count * cash // 3)  # shade to conserve cash
         return BotDecision.submit_bid(bid)

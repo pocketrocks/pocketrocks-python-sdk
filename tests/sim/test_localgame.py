@@ -153,7 +153,7 @@ class RawOnlyBot(PocketRocksBot):
         raise RuntimeError("raw bots never use the derived-context path")
 
     async def choose_raw_decision(self, frame: object, context: DecisionContext) -> BotDecision:
-        from pocketrocks.internal.bot_wire_v2 import DecisionRequest
+        from pocketrocks.internal.bot_wire import DecisionRequest
 
         assert isinstance(frame, DecisionRequest)
         assert frame.decision_kind == context.decision_kind

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from pocketrocks import ActionId, BotDecision, DecisionContext, PocketRocksBot, Suit
-from pocketrocks.internal.bot_wire_v2 import DecisionResponse
+from pocketrocks.internal.bot_wire import DecisionResponse
 from pocketrocks.testing import FakeTransport, decode_frames, heartbeat_bytes, scenario
 
 

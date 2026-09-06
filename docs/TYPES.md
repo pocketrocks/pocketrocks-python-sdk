@@ -82,7 +82,7 @@ MyBot(
     bot_id: str | None = None,
     server_url: str | None = None,               # default "wss://pocketrocks.xyz"
     capacity: int | None = None,                 # default 1
-    protocol_version: int | None = None,         # default 2
+    protocol_version: int | None = None,         # default 3; must equal it
     max_in_flight_decisions: int | None = None,  # default 4
     max_queue_size: int | None = None,           # default 32
     min_remaining_deadline_ms_to_start: int | None = None,  # default 100
@@ -158,7 +158,8 @@ For how long you have left, use the derived `remaining_deadline_ms` property
 | `player_count` | `int` | Number of players. |
 | `starting_cash` | `int` | Cash each player began with. |
 | `cash_by_seat` | `tuple[int, ...]` | Current cash for each seat, indexed by seat. |
-| `value_chart` | `tuple[int, ...]` | Score-by-count table (6 entries, indexed by count `0..5`): `value_chart[n]` is the points for holding `n` cards of a single suit. E.g. `(0, 4, 8, 12, 16, 20)`. |
+| `value_chart` | `tuple[int, ...]` | Score-by-count table (6 entries, indexed by count `0..5`): `value_chart[n]` is the points for holding `n` cards of a single suit. E.g. `(0, 4, 8, 12, 16, 20)`. May be a custom chart for this game, and cells may be negative. |
+| `payment_rule` | `"first-price" \| "second-price"` | How the auction winner pays: their own bid (first-price) or the second-highest bid (second-price, Vickrey). Flips optimal bidding from shading to truthful — see the README's [Supported rules & compatibility](../README.md#supported-rules--compatibility). `cash_by_seat` already reflects it. |
 | `objective_ids` | `tuple[int, ...]` | The objectives in play this game. |
 | `current_action_id` | `int \| None` | The action being auctioned this turn (`None` outside a turn). |
 | `current_resource_ids` | `tuple[int, int]` | Suit IDs of the resource(s) on offer this turn. |
@@ -309,7 +310,9 @@ accept/reject table both the server and this SDK assert against is
 | `resolve_chart(selection) -> tuple[int, ...]` | Key or inline cells → the 6 cells. The one place chart selections are validated. |
 | `compute_paid(rule, bids) -> int` | The auction price for a set of effective bids under a payment rule. Winner selection is not its job. |
 
-`PaymentRule` is the alias `Literal["first-price", "second-price"]`.
+`PaymentRule` is the same `Literal["first-price", "second-price"]` alias
+`DecisionContext.payment_rule` carries (defined in `pocketrocks.types`, re-exported
+from `pocketrocks.sim`); see [Type aliases](#type-aliases).
 
 ---
 
@@ -318,6 +321,7 @@ accept/reject table both the server and this SDK assert against is
 Exposed on the dataclasses for reference / type-checking:
 
 ```python
+PaymentRule = Literal["first-price", "second-price"]
 decisionKind = Literal["submitBid", "selectInfoToReveal"]
 decisionActionKind = Literal["pass", "submitBid", "selectInfoToReveal"]
 decisionFate = Literal["ok", "discarded", "corrected", "forwarded"]
