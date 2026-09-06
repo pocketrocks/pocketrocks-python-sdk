@@ -267,7 +267,14 @@ validated on construction. Accepted by `LocalGame`, `run_games`, `SimEngine`
 and `BatchSimEngine.start` as `ruleset=` (or one per row as `rulesets=`).
 
 ```python
-from pocketrocks.sim import Ruleset, PaymentRule, resolve_chart, compute_paid
+from pocketrocks.sim import (
+    Ruleset,
+    PaymentRule,
+    resolve_chart,
+    compute_paid,
+    generate_valid_chart,
+    generate_valid_charts,
+)
 ```
 
 | Field | Type | Default | Meaning |
@@ -308,6 +315,8 @@ accept/reject table both the server and this SDK assert against is
 | --- | --- |
 | `resolve_chart(selection) -> tuple[int, ...]` | Key or inline cells → the 6 cells. The one place chart selections are validated. |
 | `compute_paid(rule, bids) -> int` | The auction price for a set of effective bids under a payment rule. Winner selection is not its job. |
+| `generate_valid_chart(rng, *, max_tries=10_000) -> tuple[int, ...]` | One custom value chart inside the envelope, by rejection sampling from `rng` (a seeded `random.Random` or `numpy.random.Generator`; no global RNG). Uniform over the valid set, ~0.5% acceptance per candidate; `RuntimeError` after `max_tries` rejections. Same seed, same charts — but not the server's sequence. |
+| `generate_valid_charts(rng, n, *, max_tries=10_000) -> tuple[tuple[int, ...], ...]` | `n` charts from the same stream, for one `Ruleset` per batch row. Equivalent to `n` single calls on the same `rng`. |
 
 `PaymentRule` is the alias `Literal["first-price", "second-price"]`.
 

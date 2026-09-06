@@ -124,6 +124,71 @@ Ruleset(player_count=4, value_chart="C", payment_rule="second-price")
 `Ruleset` for you (pass one style or the other, not both). Bots never see the
 key: `DecisionContext.value_chart` is always the resolved cells.
 
+### Custom value charts
+
+The server deals custom-chart rooms a fresh chart per game, generated under the
+envelope above — so a bot trained on `A`-`E` alone never sees a negative cell
+or a valley until it is seated live. `generate_valid_chart` produces charts of
+the same shape locally, from any seeded RNG you hand it (`random.Random` or
+`numpy.random.default_rng`; it never reads a global RNG):
+
+```python
+import random
+
+from pocketrocks.sim import Ruleset, generate_valid_chart, run_games
+
+rng = random.Random(2026)
+chart = generate_valid_chart(rng)  # (0, 9, 18, 20, 19, -18): 6 ints, envelope-valid
+summary = run_games(
+    [MyBot, OtherBot, ThirdBot],
+    n_games=200,
+    ruleset=Ruleset(player_count=3, value_chart=chart, payment_rule="second-price"),
+)
+```
+
+For a batch that mixes fixed keys, hand-written charts and generated ones —
+under both payment rules — build one `Ruleset` per row:
+
+```python
+import numpy as np
+
+from pocketrocks.sim import BatchSimEngine, Ruleset, generate_valid_charts
+
+rng = np.random.default_rng(7)
+seeds = tuple(f"episode-{index}" for index in range(1024))
+charts = generate_valid_charts(rng, len(seeds))  # one custom chart per row
+engine = BatchSimEngine.start(
+    seeds=seeds,
+    rulesets=tuple(
+        Ruleset(
+            player_count=3,
+            value_chart="ABCDE"[index % 5] if index % 4 == 0 else charts[index],
+            payment_rule="second-price" if index % 2 else "first-price",
+        )
+        for index in range(len(seeds))
+    ),
+)
+```
+
+Each row's resolved cells sit in `engine.value_charts[row]` (and in every
+`DecisionContext.value_chart` on the `LocalGame` side) — a chart is resolved
+once at game start and frozen for the game.
+
+What to expect from the generator:
+
+- **Same envelope, not the same charts.** The sim validates against exactly the
+  envelope the server generates under, and its charts are uniform over that
+  valid set, but the two RNG streams are unrelated: you cannot reproduce a
+  specific live game's chart from a seed. That is by design — the server
+  persists every game's resolved cells, so a replay never regenerates them.
+- **Rejection sampling, ~0.5% acceptance.** Six cells are drawn uniformly in
+  `[-20, 20]` and the first candidate the envelope accepts is returned — about
+  1 in 180 tries. After `max_tries` (default 10,000) rejections it raises
+  `RuntimeError` rather than spinning; with a real RNG that only happens if the
+  RNG is broken.
+- **Cells may be negative.** A bot's value estimate must cope with a suit that
+  is worth *less* the more of it you hold.
+
 ### One game: `LocalGame`
 
 ```python
