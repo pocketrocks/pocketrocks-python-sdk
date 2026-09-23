@@ -21,3 +21,4 @@
       surface changed
 - [ ] Committed `uv.lock` if dependencies changed
 - [ ] Skimmed [REVIEW.md](../REVIEW.md)
+- [ ] **Strategy-free:** no tuned or strong bot logic, no private research results.
