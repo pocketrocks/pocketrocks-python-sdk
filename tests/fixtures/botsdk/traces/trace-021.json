@@ -1,7 +1,8 @@
 {
-  "rulesVersion": 1,
+  "rulesVersion": 2,
   "seed": "trace-021",
   "playerCount": 3,
+  "paymentRule": "first-price",
   "valueChartKey": "B",
   "valueChart": [
     20,
@@ -11,6 +12,28 @@
     4,
     0
   ],
+  "objectivesEnabled": true,
+  "ruleset": {
+    "minPlayers": 3,
+    "maxPlayers": 5,
+    "startingCash": {
+      "3": 30,
+      "4": 25,
+      "5": 20
+    },
+    "infoCardsPerPlayer": {
+      "3": 5,
+      "4": 4,
+      "5": 3
+    },
+    "bidWindowMs": 30000,
+    "revealWindowMs": 15000,
+    "bidRevealMs": 2000,
+    "allowUndoMs": 10000,
+    "valueChart": "B",
+    "objectivesEnabled": true,
+    "paymentRule": "first-price"
+  },
   "setup": {
     "startingCash": 30,
     "infoCardsPerPlayer": 5,
@@ -127,12 +150,12 @@
       "rawBids": [
         30,
         37,
-        23
+        -7
       ],
       "effectiveBids": [
         30,
         30,
-        23
+        0
       ],
       "winnerSeat": 1,
       "paid": 30,
@@ -158,12 +181,12 @@
       "rawBids": [
         30,
         7,
-        12
+        -7
       ],
       "effectiveBids": [
         30,
         0,
-        12
+        0
       ],
       "winnerSeat": 0,
       "paid": 30,
@@ -188,24 +211,26 @@
       "rawBids": [
         0,
         7,
-        21
+        -7
       ],
       "effectiveBids": [
         0,
         0,
-        21
+        0
       ],
-      "winnerSeat": 2,
-      "paid": 21,
+      "winnerSeat": 1,
+      "paid": 0,
       "bundleSuits": [
         3,
         2
       ],
-      "claimedObjectiveWireIds": [],
+      "claimedObjectiveWireIds": [
+        16
+      ],
       "reveal": {
-        "seat": 2,
+        "seat": 1,
         "handIndex": 3,
-        "suit": 5,
+        "suit": 1,
         "auto": false
       }
     },
@@ -219,81 +244,17 @@
       "rawBids": [
         0,
         7,
-        7
+        -7
       ],
       "effectiveBids": [
         0,
         0,
-        7
+        0
       ],
       "winnerSeat": 2,
-      "paid": 7,
+      "paid": 0,
       "bundleSuits": [
         5
-      ],
-      "claimedObjectiveWireIds": [
-        19
-      ],
-      "reveal": {
-        "seat": 2,
-        "handIndex": 0,
-        "suit": 4,
-        "auto": false
-      }
-    },
-    {
-      "actionType": "Auction1",
-      "actionWireId": 1,
-      "upcomingBefore": [
-        1,
-        1
-      ],
-      "rawBids": [
-        0,
-        7,
-        1
-      ],
-      "effectiveBids": [
-        0,
-        0,
-        1
-      ],
-      "winnerSeat": 2,
-      "paid": 1,
-      "bundleSuits": [
-        1
-      ],
-      "claimedObjectiveWireIds": [
-        12
-      ],
-      "reveal": {
-        "seat": 2,
-        "handIndex": 0,
-        "suit": 3,
-        "auto": false
-      }
-    },
-    {
-      "actionType": "Auction1",
-      "actionWireId": 1,
-      "upcomingBefore": [
-        1,
-        2
-      ],
-      "rawBids": [
-        0,
-        7,
-        1
-      ],
-      "effectiveBids": [
-        0,
-        0,
-        1
-      ],
-      "winnerSeat": 2,
-      "paid": 1,
-      "bundleSuits": [
-        1
       ],
       "claimedObjectiveWireIds": [],
       "reveal": {
@@ -304,16 +265,16 @@
       }
     },
     {
-      "actionType": "Auction2",
-      "actionWireId": 2,
+      "actionType": "Auction1",
+      "actionWireId": 1,
       "upcomingBefore": [
-        2,
-        5
+        1,
+        1
       ],
       "rawBids": [
         0,
         7,
-        0
+        -7
       ],
       "effectiveBids": [
         0,
@@ -323,8 +284,7 @@
       "winnerSeat": 0,
       "paid": 0,
       "bundleSuits": [
-        2,
-        5
+        1
       ],
       "claimedObjectiveWireIds": [],
       "reveal": {
@@ -335,16 +295,16 @@
       }
     },
     {
-      "actionType": "Auction2",
-      "actionWireId": 2,
+      "actionType": "Auction1",
+      "actionWireId": 1,
       "upcomingBefore": [
-        5,
-        5
+        1,
+        2
       ],
       "rawBids": [
         0,
         7,
-        0
+        -7
       ],
       "effectiveBids": [
         0,
@@ -354,14 +314,77 @@
       "winnerSeat": 1,
       "paid": 0,
       "bundleSuits": [
+        1
+      ],
+      "claimedObjectiveWireIds": [
+        12
+      ],
+      "reveal": {
+        "seat": 1,
+        "handIndex": 0,
+        "suit": 1,
+        "auto": false
+      }
+    },
+    {
+      "actionType": "Auction2",
+      "actionWireId": 2,
+      "upcomingBefore": [
+        2,
+        5
+      ],
+      "rawBids": [
+        0,
+        7,
+        -7
+      ],
+      "effectiveBids": [
+        0,
+        0,
+        0
+      ],
+      "winnerSeat": 2,
+      "paid": 0,
+      "bundleSuits": [
+        2,
+        5
+      ],
+      "claimedObjectiveWireIds": [],
+      "reveal": {
+        "seat": 2,
+        "handIndex": 0,
+        "suit": 3,
+        "auto": false
+      }
+    },
+    {
+      "actionType": "Auction2",
+      "actionWireId": 2,
+      "upcomingBefore": [
+        5,
+        5
+      ],
+      "rawBids": [
+        0,
+        7,
+        -7
+      ],
+      "effectiveBids": [
+        0,
+        0,
+        0
+      ],
+      "winnerSeat": 0,
+      "paid": 0,
+      "bundleSuits": [
         5,
         5
       ],
       "claimedObjectiveWireIds": [],
       "reveal": {
-        "seat": 1,
-        "handIndex": 3,
-        "suit": 1,
+        "seat": 0,
+        "handIndex": 0,
+        "suit": 3,
         "auto": false
       }
     },
@@ -375,21 +398,21 @@
       "rawBids": [
         20,
         27,
-        7
+        -7
       ],
       "effectiveBids": [
         20,
         20,
-        7
+        0
       ],
-      "winnerSeat": 0,
+      "winnerSeat": 1,
       "paid": 20,
       "bundleSuits": [],
       "claimedObjectiveWireIds": [],
       "reveal": {
-        "seat": 0,
-        "handIndex": 0,
-        "suit": 3,
+        "seat": 1,
+        "handIndex": 1,
+        "suit": 4,
         "auto": false
       }
     },
@@ -403,25 +426,23 @@
       "rawBids": [
         0,
         7,
-        0
+        -7
       ],
       "effectiveBids": [
         0,
         0,
         0
       ],
-      "winnerSeat": 1,
+      "winnerSeat": 2,
       "paid": 0,
       "bundleSuits": [
         2
       ],
-      "claimedObjectiveWireIds": [
-        16
-      ],
+      "claimedObjectiveWireIds": [],
       "reveal": {
-        "seat": 1,
-        "handIndex": 0,
-        "suit": 1,
+        "seat": 2,
+        "handIndex": 1,
+        "suit": 5,
         "auto": false
       }
     },
@@ -435,12 +456,12 @@
       "rawBids": [
         10,
         17,
-        1
+        -7
       ],
       "effectiveBids": [
         10,
         10,
-        1
+        0
       ],
       "winnerSeat": 0,
       "paid": 10,
@@ -463,7 +484,7 @@
       "rawBids": [
         0,
         7,
-        0
+        -7
       ],
       "effectiveBids": [
         0,
@@ -476,47 +497,63 @@
         5,
         3
       ],
-      "claimedObjectiveWireIds": [],
+      "claimedObjectiveWireIds": [
+        19
+      ],
       "reveal": {
         "seat": 1,
-        "handIndex": 1,
-        "suit": 4,
-        "auto": false
+        "handIndex": 0,
+        "suit": 3,
+        "auto": true
       }
+    }
+  ],
+  "endgameReveals": [
+    {
+      "seat": 0,
+      "suit": 2
+    },
+    {
+      "seat": 2,
+      "suit": 4
+    },
+    {
+      "seat": 2,
+      "suit": 1
     }
   ],
   "finalScores": [
     {
       "seat": 0,
       "cash": 0,
-      "itemsValue": 32,
+      "itemsValue": 48,
       "objectivesValue": 0,
       "investmentsValue": 0,
-      "loansValue": 30,
-      "total": 2
+      "loansValue": 10,
+      "total": 38
     },
     {
       "seat": 1,
       "cash": 0,
-      "itemsValue": 72,
-      "objectivesValue": 5,
+      "itemsValue": 56,
+      "objectivesValue": 15,
       "investmentsValue": 0,
-      "loansValue": 0,
-      "total": 77
+      "loansValue": 20,
+      "total": 51
     },
     {
       "seat": 2,
-      "cash": 0,
+      "cash": 30,
       "itemsValue": 48,
-      "objectivesValue": 10,
+      "objectivesValue": 0,
       "investmentsValue": 0,
       "loansValue": 0,
-      "total": 58
+      "total": 78
     }
   ],
   "ranking": [
-    1,
     2,
+    1,
     0
   ]
 }

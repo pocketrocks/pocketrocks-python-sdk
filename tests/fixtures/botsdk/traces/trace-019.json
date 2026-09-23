@@ -1,7 +1,8 @@
 {
-  "rulesVersion": 1,
+  "rulesVersion": 2,
   "seed": "trace-019",
   "playerCount": 4,
+  "paymentRule": "first-price",
   "valueChartKey": "E",
   "valueChart": [
     0,
@@ -11,6 +12,28 @@
     6,
     0
   ],
+  "objectivesEnabled": false,
+  "ruleset": {
+    "minPlayers": 3,
+    "maxPlayers": 5,
+    "startingCash": {
+      "3": 30,
+      "4": 25,
+      "5": 20
+    },
+    "infoCardsPerPlayer": {
+      "3": 5,
+      "4": 4,
+      "5": 3
+    },
+    "bidWindowMs": 30000,
+    "revealWindowMs": 15000,
+    "bidRevealMs": 2000,
+    "allowUndoMs": 10000,
+    "valueChart": "E",
+    "objectivesEnabled": false,
+    "paymentRule": "first-price"
+  },
   "setup": {
     "startingCash": 25,
     "infoCardsPerPlayer": 4,
@@ -112,12 +135,7 @@
       2
     ],
     "tiebreakSeat": 2,
-    "objectiveWireIds": [
-      16,
-      5,
-      10,
-      24
-    ]
+    "objectiveWireIds": []
   },
   "turns": [
     {
@@ -271,9 +289,7 @@
       "bundleSuits": [
         4
       ],
-      "claimedObjectiveWireIds": [
-        16
-      ],
+      "claimedObjectiveWireIds": [],
       "reveal": {
         "seat": 0,
         "handIndex": 1,
@@ -401,9 +417,7 @@
         5,
         3
       ],
-      "claimedObjectiveWireIds": [
-        10
-      ],
+      "claimedObjectiveWireIds": [],
       "reveal": {
         "seat": 2,
         "handIndex": 1,
@@ -623,15 +637,21 @@
       }
     }
   ],
+  "endgameReveals": [
+    {
+      "seat": 1,
+      "suit": 1
+    }
+  ],
   "finalScores": [
     {
       "seat": 0,
       "cash": 0,
       "itemsValue": 58,
-      "objectivesValue": 5,
+      "objectivesValue": 0,
       "investmentsValue": 0,
       "loansValue": 0,
-      "total": 63
+      "total": 58
     },
     {
       "seat": 1,
@@ -646,10 +666,10 @@
       "seat": 2,
       "cash": 0,
       "itemsValue": 38,
-      "objectivesValue": 5,
+      "objectivesValue": 0,
       "investmentsValue": 0,
       "loansValue": 40,
-      "total": 3
+      "total": -2
     },
     {
       "seat": 3,
@@ -662,8 +682,8 @@
     }
   ],
   "ranking": [
-    0,
     1,
+    0,
     3,
     2
   ]

@@ -11,6 +11,7 @@ from pocketrocks.sim import PaymentRule, Ruleset, compute_paid, resolve_chart
 from pocketrocks.sim.constants import VALUE_CHARTS
 from pocketrocks.sim.ruleset import (
     CHART_CELL_CAP,
+    CHART_CELLS,
     MAX_TURNS,
     PAYMENT_RULES,
     SUM_FLOOR,
@@ -19,10 +20,33 @@ from pocketrocks.sim.ruleset import (
     compute_paid_batch,
 )
 
+# A verbatim copy of packages/shared/testFixtures/chartEnvelope.json from the
+# main repo (provenance: tests/fixtures/botsdk/README.md). TS asserts the same
+# rows against isValidChart; the two validators must agree on which charts are
+# legal, not on how they are generated.
 _ENVELOPE = cast(
     "dict[str, Any]",
     json.loads((Path(__file__).parent.parent / "fixtures" / "chart_envelope.json").read_text()),
 )
+
+# The fixture names each reject row's violated constraint with one of its
+# `reasons`; this maps each name to what resolve_chart() says about it. TS folds
+# integrality into cell_out_of_range (Number.isInteger AND the bounds) while
+# this side reports a non-integer cell separately, so that one name matches
+# either message. Keyed on the fixture's own vocabulary so a reason added
+# upstream fails test_every_fixture_reason_has_a_message below, not silently.
+_REASON_MESSAGES: dict[str, str] = {
+    "wrong_length": rf"exactly {CHART_CELLS} cells",
+    "cell_out_of_range": r"cell cap|must be integers",
+    "too_many_turns": r"turning point",
+    "valley_sum": r"valley sum floor",
+    "valley_trough": r"valley min cell",
+    "sum_below_floor": r"sum floor",
+}
+
+
+def _case_id(case: dict[str, Any]) -> str:
+    return ",".join(map(str, case["values"])) or "empty"
 
 
 # --- envelope fixture -----------------------------------------------------------
@@ -30,27 +54,31 @@ _ENVELOPE = cast(
 
 def test_envelope_constants_match_fixture() -> None:
     constants = _ENVELOPE["constants"]
-    assert constants["cell_cap"] == CHART_CELL_CAP
-    assert constants["sum_floor"] == SUM_FLOOR
-    assert constants["valley_sum_floor"] == VALLEY_SUM_FLOOR
-    assert constants["valley_min_cell"] == VALLEY_MIN_CELL
-    assert constants["max_turns"] == MAX_TURNS
+    assert constants["cells"] == CHART_CELLS
+    assert constants["cellCap"] == CHART_CELL_CAP
+    assert constants["sumFloor"] == SUM_FLOOR
+    assert constants["valleySumFloor"] == VALLEY_SUM_FLOOR
+    assert constants["valleyMinCell"] == VALLEY_MIN_CELL
+    assert constants["maxTurns"] == MAX_TURNS
 
 
-@pytest.mark.parametrize("values", _ENVELOPE["accept"], ids=lambda v: ",".join(map(str, v)))
-def test_envelope_accepts(values: list[int]) -> None:
-    assert resolve_chart(values) == tuple(values)
+def test_every_fixture_reason_has_a_message() -> None:
+    assert set(_ENVELOPE["reasons"]) == set(_REASON_MESSAGES)
+    assert {case["reason"] for case in _ENVELOPE["reject"]} <= set(_ENVELOPE["reasons"])
 
 
-@pytest.mark.parametrize(
-    ("values", "reason"),
-    [(case["values"], case["reason"]) for case in _ENVELOPE["reject"]],
-    ids=[",".join(map(str, case["values"])) for case in _ENVELOPE["reject"]],
-)
-def test_envelope_rejects_naming_the_constraint(values: list[float], reason: str) -> None:
-    with pytest.raises(ValueError, match=reason):
-        # The fixture deliberately carries non-integer cells; the runtime check is the point.
-        resolve_chart(cast("list[int]", values))
+@pytest.mark.parametrize("case", _ENVELOPE["accept"], ids=_case_id)
+def test_envelope_accepts(case: dict[str, Any]) -> None:
+    values: list[int] = case["values"]
+    assert resolve_chart(values) == tuple(values), case["why"]
+
+
+@pytest.mark.parametrize("case", _ENVELOPE["reject"], ids=_case_id)
+def test_envelope_rejects_naming_the_constraint(case: dict[str, Any]) -> None:
+    # The fixture deliberately carries a non-integer cell; the runtime check is the point.
+    values = cast("list[int]", case["values"])
+    with pytest.raises(ValueError, match=_REASON_MESSAGES[case["reason"]]):
+        resolve_chart(values)
 
 
 def test_fixed_chart_e_is_the_global_minimum_sum() -> None:

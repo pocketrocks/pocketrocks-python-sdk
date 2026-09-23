@@ -7,9 +7,14 @@ from typing import Any, cast
 import pytest
 
 from pocketrocks._version import RULES_VERSION
+from pocketrocks.sim.constants import VALUE_CHARTS
+from pocketrocks.sim.ruleset import PAYMENT_RULES
 from pocketrocks.sim.traces import replay_trace, trace_ruleset
 
+# Vendored from the main repo's exporter; provenance and corpus layout in
+# tests/fixtures/botsdk/README.md.
 _TRACES = sorted((Path(__file__).parent.parent / "fixtures" / "botsdk" / "traces").glob("*.json"))
+_PLAYER_COUNTS = (3, 4, 5)
 
 # The rules version at which each slice of the ruleset space was last changed.
 # A trace is a valid oracle for its slice from that version onward: rules
@@ -49,7 +54,39 @@ def assert_rules_version_compatible(trace: dict[str, Any]) -> None:
 
 
 def test_fixtures_exist() -> None:
-    assert len(_TRACES) >= 30
+    assert len(_TRACES) >= 61
+
+
+def test_corpus_covers_every_rule_chart_and_player_count() -> None:
+    # Mirrors the exporter's own coverage guard: the PAIR of (rule, chart, count)
+    # must be present, not just every chart somewhere, so a re-vendored corpus
+    # that quietly dropped a cell fails here instead of unpinning that slice.
+    traces = [_load(path) for path in _TRACES]
+    cells = {
+        (trace["paymentRule"], trace["valueChartKey"], int(trace["playerCount"]))
+        for trace in traces
+    }
+    for rule in PAYMENT_RULES:
+        for key in VALUE_CHARTS:
+            for count in _PLAYER_COUNTS:
+                assert (rule, key, count) in cells, (
+                    f"no {rule} trace on fixed chart {key} at {count} players"
+                )
+        custom = [
+            trace
+            for trace in traces
+            if trace["paymentRule"] == rule and trace["valueChartKey"] == "custom"
+        ]
+        assert custom, f"no {rule} trace on a custom chart"
+        # Negative cells are why custom decks need their own traces (scoring
+        # must handle a negative total); the exporter refuses a seed base that
+        # draws none, and so does this side.
+        assert any(any(cell < 0 for cell in trace["valueChart"]) for trace in custom), (
+            f"no {rule} trace on a custom chart with a negative cell"
+        )
+    # An engine that selects, claims or scores objectives when they are off must
+    # fail conformance, which needs traces recorded with them off.
+    assert any(not trace["objectivesEnabled"] for trace in traces)
 
 
 def test_every_ruleset_slice_has_a_minimum_version_no_newer_than_the_engine() -> None:

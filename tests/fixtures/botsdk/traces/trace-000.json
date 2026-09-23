@@ -1,7 +1,8 @@
 {
-  "rulesVersion": 1,
+  "rulesVersion": 2,
   "seed": "trace-000",
   "playerCount": 3,
+  "paymentRule": "first-price",
   "valueChartKey": "A",
   "valueChart": [
     0,
@@ -11,6 +12,28 @@
     16,
     20
   ],
+  "objectivesEnabled": true,
+  "ruleset": {
+    "minPlayers": 3,
+    "maxPlayers": 5,
+    "startingCash": {
+      "3": 30,
+      "4": 25,
+      "5": 20
+    },
+    "infoCardsPerPlayer": {
+      "3": 5,
+      "4": 4,
+      "5": 3
+    },
+    "bidWindowMs": 30000,
+    "revealWindowMs": 15000,
+    "bidRevealMs": 2000,
+    "allowUndoMs": 10000,
+    "valueChart": "A",
+    "objectivesEnabled": true,
+    "paymentRule": "first-price"
+  },
   "setup": {
     "startingCash": 30,
     "infoCardsPerPlayer": 5,
@@ -592,6 +615,7 @@
       "reveal": null
     }
   ],
+  "endgameReveals": [],
   "finalScores": [
     {
       "seat": 0,

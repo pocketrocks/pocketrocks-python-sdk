@@ -137,10 +137,14 @@ change, the release routine is:
 2. **Regenerate the fixtures in the main repo:**
    `yarn workspace @pocketrocks/server fixtures:bot-sdk <outDir>`. Traces are
    only ever produced by the TS engine — never by this SDK, and never by hand.
-3. **Copy the output over `tests/fixtures/botsdk/`** here, then port the rules
-   change into `src/pocketrocks/sim/` (the batch kernel in `batch_engine.py`;
-   `constants.py` if a table changed; `ruleset.py` if the ruleset gained a
-   field or the constraint envelope moved).
+3. **Copy the output over `tests/fixtures/botsdk/`** here and record the main
+   repo commit you exported from in `tests/fixtures/botsdk/README.md`. If the
+   constraint envelope moved, also copy
+   `packages/shared/testFixtures/chartEnvelope.json` verbatim over
+   `tests/fixtures/chart_envelope.json` (same README, same commit). Then port
+   the rules change into `src/pocketrocks/sim/` (the batch kernel in
+   `batch_engine.py`; `constants.py` if a table changed; `ruleset.py` if the
+   ruleset gained a field or the constraint envelope moved).
 4. **Run the conformance suite:** `uv run pytest tests/sim/test_conformance.py`.
    It gates on version agreement and replays every trace end to end. A failure
    is a rules divergence: fix the engine, never the fixture.
