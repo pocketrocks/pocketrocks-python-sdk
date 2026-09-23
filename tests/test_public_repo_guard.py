@@ -99,6 +99,53 @@ def test_github_api_host_needs_write_method_or_data_flag() -> None:
     )
 
 
+def test_gh_global_flag_before_group_does_not_hide_a_write() -> None:
+    # Regression: -R/--repo (and --repo=<v>) sit between `gh` and the group/sub pair. The old
+    # regex required group+sub immediately after `gh` and missed these entirely.
+    assert prg.is_bash_write("gh -R o/r issue comment 1 --body x")
+    assert prg.is_bash_write("gh --repo o/r issue create --title t --body x")
+    assert prg.is_bash_write("gh --repo=o/r pr create --title t --body x")
+    assert prg.is_bash_write("gh --hostname github.example.com issue comment 1 --body x")
+
+
+def test_gh_global_flag_before_read_subcommand_is_still_a_noop() -> None:
+    assert not prg.is_bash_write("gh -R o/r pr view 3")
+
+
+def test_gh_global_flag_write_marker_denied_end_to_end() -> None:
+    for cmd in [
+        f"gh -R o/r issue comment 1 --body {MARK}",
+        f"gh --repo o/r issue create --title t --body {MARK}",
+    ]:
+        res = run("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}})
+        assert res is not None, cmd
+        assert res["hookSpecificOutput"]["permissionDecision"] == "deny", cmd
+
+
+def test_gh_repo_equals_flag_is_scanned_not_denied_without_marker() -> None:
+    cmd = "gh --repo=o/r pr create --title t --body clean"
+    res = run("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}})
+    assert res is not None
+    assert "permissionDecision" not in res["hookSpecificOutput"]
+
+
+def test_gh_dash_r_read_subcommand_is_noop_end_to_end() -> None:
+    cmd = {"tool_name": "Bash", "tool_input": {"command": "gh -R o/r pr view 3"}}
+    assert run("PreToolUse", cmd) is None
+
+
+def test_gh_unparseable_command_fails_closed_as_write() -> None:
+    # An unbalanced quote defeats shlex; we can no longer trust token boundaries, so treat it as
+    # a write rather than silently falling through.
+    assert prg.is_bash_write('gh issue comment 1 --body "unterminated')
+
+
+def test_gh_failsafe_verb_catches_unanticipated_flag_shapes() -> None:
+    # Flags consume every token except the trailing verb, so the group/sub parse comes up empty
+    # (no second token to pair with) -- the failsafe verb match is what actually catches this.
+    assert prg.is_bash_write("gh -X transfer")
+
+
 def test_bash_gh_write_end_to_end_is_scanned_not_noop() -> None:
     cmd = {"tool_name": "Bash", "tool_input": {"command": "gh repo create demo --public"}}
     res = run("PreToolUse", cmd)

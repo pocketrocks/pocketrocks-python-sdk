@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import sys
 from collections.abc import Iterable
@@ -21,6 +22,7 @@ _READ = re.compile(r"(read|list|get|search)", re.I)
 _WRITE_OVERRIDES = frozenset({"mark_all_notifications_read"})
 
 _GIT_COMMIT_OR_PUSH = re.compile(r"\bgit\b[^;&|]*\b(commit|push)\b")
+_GH_MENTION = re.compile(r"\bgh\b")
 # `gh <group> <sub>`: a write unless the subcommand is one of these non-mutating verbs. `gh api`
 # is excluded here and handled on its own below, since its second token is a URL path, not a
 # subcommand drawn from this vocabulary.
@@ -39,7 +41,30 @@ _GH_READ_SUBS = frozenset(
         "download",
     }
 )
-_GH_GROUP_SUB = re.compile(r"\bgh\s+([a-z][a-z-]*)\s+([a-z][a-z-]*)", re.I)
+# gh's own global flags that take a value as a separate token, so they (and that value) must be
+# skipped before the group/subcommand pair can be read off the token stream.
+_GH_VALUE_FLAGS = frozenset({"-R", "--repo", "--hostname"})
+# Belt-and-braces: if the group/sub parse above is defeated by some flag shape we didn't
+# anticipate, still catch a write if any of these mutating verbs shows up anywhere in the
+# tokenized command. Over-detection here only produces a REMINDER, never a deny — deny still
+# requires an actual marker hit — so a false positive is cheap and a false negative is not.
+_GH_FAILSAFE_WRITE_VERBS = frozenset(
+    {
+        "create",
+        "comment",
+        "edit",
+        "merge",
+        "close",
+        "delete",
+        "review",
+        "upload",
+        "set",
+        "run",
+        "transfer",
+        "fork",
+        "sync",
+    }
+)
 _GH_API = re.compile(r"\bgh\s+api\b", re.I)
 # A write HTTP method or a flag that attaches a request body.
 _WRITE_METHOD_OR_DATA = re.compile(
@@ -62,14 +87,54 @@ def is_write_tool(name: str) -> bool:
     return not _READ.search(tool)
 
 
-def _is_gh_write(command: str) -> bool:
-    for m in _GH_GROUP_SUB.finditer(command):
-        group, sub = m.group(1).lower(), m.group(2).lower()
-        if group == "api":
+def _tokenize(command: str) -> tuple[list[str], bool]:
+    """Split into shell words. Returns (tokens, parse_failed) — an unbalanced-quote command
+    falls back to a plain whitespace split, and the caller must treat that as a write: we can no
+    longer trust the token boundaries enough to conclude it's safe."""
+    try:
+        return shlex.split(command), False
+    except ValueError:
+        return command.split(), True
+
+
+def _gh_group_sub(tokens: list[str]) -> tuple[str, str] | None:
+    try:
+        i = tokens.index("gh") + 1
+    except ValueError:
+        return None
+    n = len(tokens)
+    while i < n:
+        tok = tokens[i]
+        if tok in _GH_VALUE_FLAGS:
+            i += 2  # flag + its value, e.g. -R owner/repo, --hostname host
             continue
-        if sub not in _GH_READ_SUBS:
+        if tok.startswith("--") and "=" in tok:
+            i += 1  # --repo=owner/repo
+            continue
+        if tok.startswith("-"):
+            i += 1  # any other global flag token
+            continue
+        break
+    if i + 1 < n:
+        return tokens[i].lower(), tokens[i + 1].lower()
+    return None
+
+
+def _is_gh_write(command: str) -> bool:
+    if not _GH_MENTION.search(command):
+        return False
+    tokens, parse_failed = _tokenize(command)
+    if parse_failed:
+        return True
+    pair = _gh_group_sub(tokens)
+    if pair is not None:
+        group, sub = pair
+        if group != "api" and sub not in _GH_READ_SUBS:
             return True
-    return bool(_GH_API.search(command) and _WRITE_METHOD_OR_DATA.search(command))
+    if _GH_API.search(command) and _WRITE_METHOD_OR_DATA.search(command):
+        return True
+    lowered_tokens = {t.lower() for t in tokens}
+    return bool(lowered_tokens & _GH_FAILSAFE_WRITE_VERBS)
 
 
 def is_bash_write(command: str) -> bool:
