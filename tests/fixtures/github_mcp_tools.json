@@ -1,5 +1,6 @@
 {
   "source": "github/github-mcp-server README, tag v1.12.2 (https://github.com/github/github-mcp-server/releases/tag/v1.12.2)",
+  "rule": "Classified by READING each tool's one-line description in the README table, not by running is_write_tool's name heuristic (that would be circular). A tool is a write if its description denotes a state mutation -- create, update, delete, merge, mark, dismiss, star/unstar, fork, push, assign, add, remove, request, rerun, cancel, trigger, manage, open, edit, set, perform, or similar -- and a read otherwise (get, list, search, retrieve, view details, with no mutating verb). Two tools whose descriptions merely contain the noun phrase 'pull request' were manually corrected back to read after an automated verb-regex pass over the descriptions flagged them on that substring rather than an actual write verb: github_support_docs_search ('...Pull Request Practices...' -- it only retrieves docs) and pull_request_read ('Get details for a single pull request' -- it only reads). mark_all_notifications_read is a write ('Mark all notifications as read' mutates notification state) even though its own name ends in '_read'; this is exactly the case public-repo-guard.py's _WRITE_OVERRIDES set exists to correct, since the name-based is_write_tool heuristic alone would misclassify it as a read.",
   "reads": [
     "actions_get",
     "actions_list",
@@ -49,7 +50,6 @@
     "list_secret_scanning_alerts",
     "list_starred_repositories",
     "list_tags",
-    "mark_all_notifications_read",
     "projects_get",
     "projects_list",
     "pull_request_read",
@@ -86,6 +86,7 @@
     "label_write",
     "manage_notification_subscription",
     "manage_repository_notification_subscription",
+    "mark_all_notifications_read",
     "merge_pull_request",
     "projects_write",
     "pull_request_review_write",

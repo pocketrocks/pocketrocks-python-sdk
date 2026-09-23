@@ -16,10 +16,36 @@ from typing import Any, TextIO
 
 MARKER_RE = re.compile("PRIVATE-DO-NOT-PUBLISH" + r":[0-9a-f-]{36}")
 _READ = re.compile(r"(read|list|get|search)", re.I)
-_GIT_WRITE = re.compile(
-    r"\bgit\b[^;&|]*\b(commit|push)\b|\bgh\b[^;&|]*\b(pr|issue|release|api)\b|"
-    r"(api|uploads)\.github\.com"
+# mark_all_notifications_read *mutates* read-state despite matching _READ by name; any other
+# tool the fixture in tests/fixtures/github_mcp_tools.json reveals as misclassified goes here too.
+_WRITE_OVERRIDES = frozenset({"mark_all_notifications_read"})
+
+_GIT_COMMIT_OR_PUSH = re.compile(r"\bgit\b[^;&|]*\b(commit|push)\b")
+# `gh <group> <sub>`: a write unless the subcommand is one of these non-mutating verbs. `gh api`
+# is excluded here and handled on its own below, since its second token is a URL path, not a
+# subcommand drawn from this vocabulary.
+_GH_READ_SUBS = frozenset(
+    {
+        "view",
+        "list",
+        "status",
+        "diff",
+        "checks",
+        "search",
+        "browse",
+        "clone",
+        "checkout",
+        "watch",
+        "download",
+    }
 )
+_GH_GROUP_SUB = re.compile(r"\bgh\s+([a-z][a-z-]*)\s+([a-z][a-z-]*)", re.I)
+_GH_API = re.compile(r"\bgh\s+api\b", re.I)
+# A write HTTP method or a flag that attaches a request body.
+_WRITE_METHOD_OR_DATA = re.compile(
+    r"-X\s*(?:POST|PUT|PATCH|DELETE)\b|--data(?:-\w+)?\b|-d\b|-F\b|--json\b", re.I
+)
+_GITHUB_API_HOST = re.compile(r"\b(?:api|uploads)\.github\.com\b")
 REMINDER = (
     "This repository is PUBLIC. It must stay strategy-free: no tuned constants, no strong or "
     "ranked bots, no benchmark results, nothing learned from private research. If a task needs "
@@ -28,7 +54,30 @@ REMINDER = (
 
 
 def is_write_tool(name: str) -> bool:
-    return name.startswith("mcp__github__") and not _READ.search(name.split("__")[-1])
+    if not name.startswith("mcp__github__"):
+        return False
+    tool = name.split("__")[-1]
+    if tool in _WRITE_OVERRIDES:
+        return True
+    return not _READ.search(tool)
+
+
+def _is_gh_write(command: str) -> bool:
+    for m in _GH_GROUP_SUB.finditer(command):
+        group, sub = m.group(1).lower(), m.group(2).lower()
+        if group == "api":
+            continue
+        if sub not in _GH_READ_SUBS:
+            return True
+    return bool(_GH_API.search(command) and _WRITE_METHOD_OR_DATA.search(command))
+
+
+def is_bash_write(command: str) -> bool:
+    if _GIT_COMMIT_OR_PUSH.search(command):
+        return True
+    if _is_gh_write(command):
+        return True
+    return bool(_GITHUB_API_HOST.search(command) and _WRITE_METHOD_OR_DATA.search(command))
 
 
 def text_hits(text: str) -> list[str]:
@@ -85,7 +134,7 @@ def main(stdin: TextIO = sys.stdin, stdout: TextIO = sys.stdout, argv: list[str]
         payload = json.load(stdin)
         tool, tin = payload.get("tool_name", ""), payload.get("tool_input", {}) or {}
         if tool == "Bash":
-            if not _GIT_WRITE.search(tin.get("command", "")):
+            if not is_bash_write(tin.get("command", "")):
                 return 0
             texts = _bash_texts(tin.get("command", ""))
         elif is_write_tool(tool):
