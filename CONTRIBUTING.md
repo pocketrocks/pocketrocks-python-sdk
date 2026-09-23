@@ -185,3 +185,10 @@ optimistic floor on those three would not be caught here.
 [`REVIEW.md`](REVIEW.md) is a living checklist of pitfalls we recurrently miss.
 Skim it before opening a PR. Found a new one mid-review? File it to the review
 inbox issue rather than editing `REVIEW.md` from an unrelated branch.
+
+## Strategy-free by policy
+
+This SDK is public and ships only rules, simulation, runtime and a harness, with toy sample bots
+and simple, untuned building blocks. It does not accept tuned constants, strong or ranked bots, or
+benchmark findings. Agent sessions in this repo load a guard
+(`.claude/hooks/public-repo-guard.py`) that reminds them of this.

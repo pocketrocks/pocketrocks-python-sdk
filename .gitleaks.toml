@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "private-code-marker"
+description = "Private-code marker: this content must never be published"
+regex = '''PRIVATE-DO-NOT-PUBLISH:[0-9a-f-]{36}'''

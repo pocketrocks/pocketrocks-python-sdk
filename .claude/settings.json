@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/public-repo-guard.py\" SessionStart || echo '{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"[public-repo-guard] hook failed to run; this repository is PUBLIC and must stay strategy-free. Treat every task as if the guard is active until it is fixed.\"}}'",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|mcp__github__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/public-repo-guard.py\" PreToolUse || exit 2",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
